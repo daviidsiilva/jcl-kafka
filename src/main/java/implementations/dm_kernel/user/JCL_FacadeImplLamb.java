@@ -105,7 +105,7 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 			JCL_connector taskConnector = new ConnectorImpl();
 			taskConnector.connect(host, Integer.parseInt(port),mac);
 			JCL_result result = taskConnector.sendReceive(classReg,portS).getResult();
-
+			
 			return ((Boolean) result.getCorrectResult()).booleanValue();
 
 		} catch (Exception e) {

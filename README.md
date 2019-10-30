@@ -2,5 +2,8 @@
 The Java Cá&Lá (or just JCL) is a middleware that integrates high performance computing (HPC) and Internet of things (IoT) in a unique API. For more details about JCL see www.javacaela.org
 
 # JCL-Kafka
-Middleware para HPC, baseado em eventos
+JCL event based
 
+# Dependences
+- Oracle Java 1.8
+- Kafka 2.3

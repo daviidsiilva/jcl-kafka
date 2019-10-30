@@ -83,39 +83,25 @@ subprojects {
 
 }
 
-project(':JCL_Host') {
-	// Apply the java plugin to add support for Java    
-	//apply plugin: 'application'
-	
-	//mainClassName = 'implementations.dm_kernel.host.MainHost'
-	
+project(':JCL_Host') {	
 	jar {
-			doFirst{
-		    	from {
-		        	(configurations.runtime).collect{
-		            	it.isDirectory() ? it : zipTree(it)
-		        	}        	
-		    	}
+		doFirst{
+	    	from {
+		        (configurations.runtime).collect{
+		            it.isDirectory() ? it : zipTree(it)
+		        }        	
+		    }
 		    	
-		    	 destinationDir project.file('../JCL_RELEASE/jcl_JARS_pacu/')
+		    destinationDir project.file('../JCL_RELEASE/jcl_JARS_pacu/')
 		    	 
-		    	manifest {
-		        	attributes(
-		        	"Main-Class": "implementations.dm_kernel.host.KafkaHost")
-		        	from '../manifest.txt'
-		    	}
-	    	}
-	    	exclude 'META-INF/*.RSA', 'META-INF/*.SF','META-INF/*.DSA' 
-		}
-		
-	//assemble.dependsOn 'propertyJar'
-	
-	//task propertyJar(type: Jar) {
-	// archiveName = "JCL_Host-1.0.jar"
-	// from(sourceSets.main.allSource) {
-	//    include '**'
-	// }}
-
+		    manifest {
+		        attributes(
+		        "Main-Class": "implementations.dm_kernel.host.KafkaHost")
+		        from '../manifest.txt'
+		    }
+	    }
+	    exclude 'META-INF/*.RSA', 'META-INF/*.SF','META-INF/*.DSA' 
+	}
 }
 
 project(':JCL_User'){
