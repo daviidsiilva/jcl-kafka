@@ -125,7 +125,6 @@ project(':JCL_User'){
 //    include '*.*'
 // 	}
     
-    
     destinationDir project.file('../JCL_RELEASE/jcl_JARS_pacu/')
     
     manifest {
