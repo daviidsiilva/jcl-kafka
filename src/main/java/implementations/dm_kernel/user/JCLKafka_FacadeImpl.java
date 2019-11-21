@@ -66,11 +66,11 @@ public class JCLKafka_FacadeImpl extends JCL_FacadeImplLamb {
 	) {
 		try {		
 			
-			Properties properties = new KafkaProperties().get(host, port, objectNickname);
+			Properties kafkaProperties = new KafkaProperties().get(host, port, objectNickname);
 			
 			Thread threadProducer = new Thread() {
 				public void run() {
-					KafkaProducer<String, String> kafkaProducer = new KafkaProducer<String, String>(properties);
+					KafkaProducer<String, String> kafkaProducer = new KafkaProducer<String, String>(kafkaProperties);
 					
 					try {
 						final ProducerRecord<String, String> record = new ProducerRecord<>(
@@ -95,7 +95,7 @@ public class JCLKafka_FacadeImpl extends JCL_FacadeImplLamb {
 			
 			Thread threadConsumer = new Thread() {
 				public void run() {
-					KafkaConsumer<String, String> kafkaConsumer = new KafkaConsumer<String, String>(properties);
+					KafkaConsumer<String, String> kafkaConsumer = new KafkaConsumer<String, String>(kafkaProperties);
 					
 					try {
 						kafkaConsumer.subscribe(Arrays.asList(objectNickname));

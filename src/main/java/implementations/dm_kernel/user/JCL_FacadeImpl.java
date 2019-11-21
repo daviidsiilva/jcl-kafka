@@ -236,29 +236,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 	}
 
-	//Return JCL version
-	//	@Override
-	//	public String version(){
-	//		return new String("Pacu");	
-	//	}
-
-	//Get server time
-	//	@Override
-	//	public Long getServerTime(){
-	//		try {
-	//			//exec lamb
-	//			Object[] argsLam = {serverAdd,serverPort};
-	//			Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "getServerTime", argsLam);
-	//			JCL_message_long mst = (JCL_message_long) (t.get()).getCorrectResult();
-	//			return mst.getRegisterData()[0];
-	//		} catch (Exception e) {
-	//			System.err
-	//					.println("JCL facade Lambari problem in getServerTime()");
-	//			return null;
-	//		}
-	//	}
-
-
 	public void update(){
 		try{
 //			Object[] argsLam = {};

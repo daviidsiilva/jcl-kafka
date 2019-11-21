@@ -30,15 +30,25 @@ import io.protostuff.ProtobufIOUtil;
 import io.protostuff.Schema;
 import io.protostuff.runtime.RuntimeSchema;
 
-import java.io.File;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Map.Entry;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.StringSerializer;
 
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
@@ -49,6 +59,9 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 	public static final ConcurrentHashMap<Long, List<Long>> taskTimes = new ConcurrentHashMap<Long, List<Long>>();
 	public static final ConcurrentHashMap<Long, Long> taskMemory = new ConcurrentHashMap<Long, Long>();
 	private Schema scow = RuntimeSchema.getSchema(ObjectWrap.class);
+	
+	private static final ConcurrentHashMap<String, String> kafkaLocalMemory = new ConcurrentHashMap<String, String>();
+	private static final Collection<String> kafkaTopics = new ArrayList<String>(); 
 	
 	public ConcurrentHashMap<Long, List<Long>> getTaskTimes() {
 		try {
@@ -376,10 +389,81 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 		}
 	}
 	
+	private Producer<Long, String> createProducer() {
+        Properties producerProperties = new Properties();
+        
+        producerProperties.put(
+        		ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
+        		"localhost:9092");
+        producerProperties.put(
+        		ProducerConfig.CLIENT_ID_CONFIG, 
+        		"KafkaExampleProducer");
+        producerProperties.put(
+        		ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+                StringSerializer.class.getName());
+        producerProperties.put(
+        		ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
+        		StringSerializer.class.getName());
+        
+        return new KafkaProducer<>(producerProperties);
+    }
 	
 	public Object[] execute(JCL_task task,String host,String port, String mac, String portS,boolean hostChange) {
-		try {		
+		
+		Thread producer = new Thread() {
+			public void run() {
+				Properties producerProperties = new Properties();
+				
+		        producerProperties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+		        producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "kafkaProducer" + host);
+		        producerProperties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+		        producerProperties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+		        
+				Producer<String, String> kafkaProducer = new KafkaProducer<>(producerProperties);
+				
+				final ProducerRecord<String, String> record =
+		                new ProducerRecord<>("streams-jcl-input", "test", "test");
 
+		        try {
+		        	RecordMetadata metadata = kafkaProducer.send(record).get();
+		        	
+		        	System.out.printf("sent record(key=%s value=%s) " +  "meta(partition=%d, offset=%d)\n",
+		        			record.key(), record.value(), metadata.partition(), metadata.offset());
+		        } catch(Exception e) {
+		        	System.err.println(e);
+		        } finally {
+		        	kafkaProducer.flush();
+		        	kafkaProducer.close();
+		        }
+			}
+		};
+		
+		Thread consumer = new Thread() {
+			public void run() {
+				Properties producerProperties = new Properties();
+				
+		        producerProperties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+		        producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "kafkaProducer" + host);
+		        producerProperties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+		        producerProperties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+		        
+				Consumer<String, String> kafkaConsumer = new KafkaConsumer<>(producerProperties);
+				
+		        try {
+		        	kafkaConsumer.subscribe(kafkaTopics);
+		        	
+		        } catch(Exception e) {
+		        	System.err.println(e);
+		        } finally {
+		        	kafkaConsumer.close();
+		        }
+			}
+		};
+		
+		producer.start();
+		consumer.start();
+		
+		try {
 				//Create msg				
 				MessageTaskImpl msgTask = new MessageTaskImpl();
 				task.setPort(this.port);
@@ -672,6 +756,7 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 				globalVarConnector.disconnect();
 				
 				// result from host
+				System.out.println((Boolean) result.getCorrectResult());
 				return (Boolean) result.getCorrectResult();
 
 		} catch (Exception e) {
@@ -1137,6 +1222,16 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 	//Get the global variable value
 	//Revision byte[]
 	public Object getValue(Object key,String host,String port, String mac, String portS,int hostId) {
+		Object kafkaReturn;
+		
+		Thread getLocalKafkaValue = new Thread() {
+			public void run() {
+				//return kafkaTopics.toArray().last();
+			}
+		};
+		
+		getLocalKafkaValue.start();
+		
 		try {	
 			
 				// ################ Serialization key ########################
