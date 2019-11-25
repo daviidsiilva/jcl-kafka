@@ -64,6 +64,7 @@ import commom.GenericConsumer;
 import commom.GenericResource;
 import commom.JCL_handler;
 
+
 public class MainHost extends Server{
 	private String hostPort;
 	private static String nic;
@@ -84,6 +85,8 @@ public class MainHost extends Server{
 	protected int serverPort;
 	static int BoardType;
 	private JCL_FacadeImpl jcl;
+	
+	public String JCLKAFKA = "JCLKafka";
 
 	/**
 	 * @param args
@@ -221,7 +224,6 @@ public class MainHost extends Server{
 	@Override
 	protected void beforeListening() {
 		// Kafka begin
-
 		Thread kafkaCluster = new Thread() {
 			public void run() {
 				Properties kafkaProperties = new Properties();
@@ -234,35 +236,36 @@ public class MainHost extends Server{
 						"localhost:9092");
 				kafkaProperties.put(
 						StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, 
-						Serdes.String());
+						Serdes.String().getClass());
 				kafkaProperties.put(
 						StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, 
-						Serdes.String());
+						Serdes.String().getClass());
 
 				final StreamsBuilder builder = new StreamsBuilder();
 
 				KStream<String, String> source = builder.stream(
-						"streams-jcl-input", 
-						Consumed.with(Serdes.String(), Serdes.String()));
+						"streams-jcl-input");
 				
-				source.flatMapValues(value -> Arrays.asList(value.toLowerCase(Locale.getDefault()).split("\\W+")))
-				.groupBy((key, value) -> value)
-				.count(Materialized.<String, Long, KeyValueStore<Bytes, byte[]>>as("store"))
-				.toStream()
-				.to("streams-jcl-output", Produced.with(Serdes.String(), Serdes.Long()));
+				source.to("streams-jcl-output");
+				
+//				source.flatMapValues(value -> Arrays.asList(value.toLowerCase(Locale.getDefault()).split("\\W+")))
+//				.groupBy((key, value) -> value)
+//				.count(Materialized.<String, Long, KeyValueStore<Bytes, byte[]>>as("store"))
+//				.toStream()
+//				.to("streams-jcl-output", Produced.with(Serdes.String(), Serdes.Long()));
 
 				final Topology topology = builder.build();
 
 				final KafkaStreams streams = new KafkaStreams(topology, kafkaProperties);
 
 				final CountDownLatch latch = new CountDownLatch(1);
-
-				System.out.println(topology.describe());
-
+				
+				System.out.println("HOST " + JCLKAFKA + " is OK");
+				
 				Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook"){
 					@Override
 					public void run () {
-						System.out.println("Closing JCLKafkaHost");
+						System.out.println("HOST " + JCLKAFKA + " WAS UNREGISTERED");
 						streams.close();
 						latch.countDown();
 					}
@@ -272,6 +275,7 @@ public class MainHost extends Server{
 					streams.start();
 					latch.await();
 				} catch (Throwable t) {
+					System.out.println(t);
 					System.exit(1);
 				}
 			}
