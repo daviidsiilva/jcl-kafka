@@ -49,6 +49,10 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.databind.ser.std.NumberSerializers.LongSerializer;
 
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
@@ -738,6 +742,7 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 	//inst global variable with jar
 	//Revision byte[]
 	public boolean instantiateGlobalVar(Object key,String nickName, Object[] defaultVarValue,String host,String port, String mac, String portS, int hostId) {
+//		System.out.println("line 741");
 		try {
 
 			
@@ -850,6 +855,8 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 	//inst global variable
 	//Revision byte[]
 	public Boolean instantiateGlobalVar(Object key, Object instance,String host,String port, String mac,String portS,int hostId) {
+//		System.out.println("instantiateGlobalVar(Object, Object) line 852");
+		
 		try {
 							
 			// ################ Serialization key ########################
@@ -923,6 +930,7 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 	//inst global variable
 	//Revision byte[]
 	public Boolean instantiateGlobalVar(String host,String port, String mac, String portS, JCL_message_list_global_var gvList, int hostId) {
+//		System.out.println("line 968");
 		try {
 				JCL_connector globalVarConnector = new ConnectorImpl();
 				globalVarConnector.connect(host, Integer.parseInt(port),mac);
@@ -1222,15 +1230,16 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 	//Get the global variable value
 	//Revision byte[]
 	public Object getValue(Object key,String host,String port, String mac, String portS,int hostId) {
-		Object kafkaReturn;
-		
-		Thread getLocalKafkaValue = new Thread() {
-			public void run() {
-				//return kafkaTopics.toArray().last();
-			}
-		};
-		
-		getLocalKafkaValue.start();
+//		System.out.println("JCL_FacadeImplLambari:getValue() 1230");
+//		Object kafkaReturn;
+//		
+//		Thread getLocalKafkaValue = new Thread() {
+//			public void run() {
+//				System.out.println("kafkaReturn");
+//			}
+//		};
+//		
+//		getLocalKafkaValue.start();
 		
 		try {	
 			

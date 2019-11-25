@@ -30,7 +30,6 @@ import interfaces.kernel.JCL_task;
 import interfaces.kernel.datatype.Device;
 import io.protostuff.LinkedBuffer;
 import io.protostuff.ProtobufIOUtil;
-import io.protostuff.ProtostuffIOUtil;
 import io.protostuff.Schema;
 import io.protostuff.runtime.RuntimeSchema;
 
@@ -41,8 +40,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import implementations.util.ByteBuffer;
+
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -56,44 +56,30 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+
 import javassist.ClassPool;
 import javassist.CtClass;
-import commom.Constants;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
-
-/*
- * 
- *  
- 1 public boolean register(File[] f, String classToBeExecuted) {
- 2 public boolean unRegister(String nickName) {
- 3 public void executeSimple(String objectNickname, Object... args) {
- 4 public String execute(String objectNickname, Object... args) {
- 5 public String execute(String className, String methodName, Object... args) {
- 6 public JCL_result getResultBlocking(String ID) {
- 7 public JCL_result getResultUnblocking(String ID) {
- 8 public JCL_result removeResult(String ID) {
- 9 public Object instantiateGlobalVar(String varName, Class<?> varType,
- 10 public boolean instantiateGlobalVar(String varName, Object instance) {
- 11 public boolean destroyGlobalVar(String varName) {
- 12 public boolean setValue(String varName, Object value) {
- 13 public boolean setValueUnlocking(String varName, Object value) {
- 14 public JCL_result getValue(String varName) {
- 15 public JCL_result getValueLocking(String varName) {
- 16 public void destroy() {
- 17 public boolean containsGlobalVar(String ninckName){
- 18 public boolean containsTask(String ninckName){
- 19 public List<String> getHosts() {
-
- METHOD DEPRECATED in JCL distributed version: public boolean register(Class<?> object, String nickName) {
-
- */
 
 public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Holder implements JCL_facade{
 
@@ -121,7 +107,70 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private static int delta;
 	private int port;
 
+	private Collection<String> kafkaTopic;
+	private KafkaConsumer<String, String> kafkaConsumer;
+	private Producer<String, String> kafkaProducer;
+
 	protected JCL_FacadeImpl(Properties properties){
+//		AdminClient adminClient = AdminClient.create(properties);
+//		NewTopic newTopic = new NewTopic("name", 1, (short) 1);
+//		Collection<NewTopic> topicsList = new ArrayList<NewTopic>();
+//
+//		topicsList.add(newTopic);
+//		adminClient.createTopics(topicsList);
+//		adminClient.close();
+//
+//		kafkaConsumer = new KafkaConsumer<String, String>(properties);
+//		kafkaConsumer.subscribe(topicsList);
+		
+		Properties consumerProperties = new Properties();
+		
+		consumerProperties .put(
+			ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+			"localhost" + ":" + "9092");
+		consumerProperties .put(
+			ConsumerConfig.CLIENT_ID_CONFIG, 
+			"jcl");
+		consumerProperties .put(
+			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
+			StringDeserializer.class.getName());
+		consumerProperties .put(
+			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
+			StringDeserializer.class.getName());
+		
+		Consumer<String, String> consumer = new KafkaConsumer<String, String>(consumerProperties);
+		consumer.close();
+		
+		kafkaTopic = new ArrayList<String>();
+		kafkaTopic.add("jcl");
+		
+		Properties producerProperties = new Properties();
+		
+		producerProperties.put(
+			ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+			"localhost" + ":" + "9092");
+		producerProperties.put(
+			ProducerConfig.CLIENT_ID_CONFIG, 
+			"jcl");
+		producerProperties.put(
+			ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, 
+			StringSerializer.class.getName());
+		producerProperties.put(
+			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
+			StringSerializer.class.getName());
+		
+		kafkaProducer = new KafkaProducer<String, String>(producerProperties);
+//		kafkaProducer
+		
+//		consumer.
+		
+		Thread teste = new Thread() {
+			public void run() {
+				System.out.println(">>>>>>>>>>>>> KAFKA CODE FINISHED");
+			}
+		};
+		teste.start();
+
 		try {
 			//single pattern
 			if (instance == null){
@@ -148,8 +197,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			//config connection			
 			ConnectorImpl.timeout = timeOut;			
 
-	    	JCL_connector controlConnector = new ConnectorImpl(false);
-	    	
+			JCL_connector controlConnector = new ConnectorImpl(false);
+
 			if (controlConnector.connect(serverAdd, serverPort, null)){
 				controlConnector.disconnect();
 			}else{
@@ -158,9 +207,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					serverAdd = serverData[0];
 					serverPort = Integer.parseInt(serverData[1]);
 					controlConnector.connect(serverAdd, serverPort, null);
-	    		}
+				}
 			}
-			
+
 			//ini jcl lambari 
 			jcl.register(JCL_FacadeImplLamb.class, "JCL_FacadeImplLamb");
 
@@ -238,8 +287,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	public void update(){
 		try{
-//			Object[] argsLam = {};
-//			Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "getSlaveIds", argsLam);
+			//			Object[] argsLam = {};
+			//			Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "getSlaveIds", argsLam);
 			JCL_message_generic mgh = (JCL_message_generic)this.getSlaveIds(serverAdd, serverPort,serverSPort,3);
 
 			Object obj[] = (Object[]) mgh.getRegisterData();
@@ -286,7 +335,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			JCL_message_generic mc = new MessageGenericImpl();
 			mc.setType(42);
 			mc.setRegisterData(deviceType);
-			
+
 			boolean activateEncryption = false;
 			if (ConnectorImpl.encryption){
 				activateEncryption = true;
@@ -297,7 +346,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				this.serverPort = this.serverSPort;
 				controlConnector.connect(serverAdd, serverSPort,null);
 			}
-					
+
 			JCL_message mr = controlConnector.sendReceiveG(mc,null);
 			JCL_message_generic mg = (MessageGenericImpl)  mr;
 			Object obj[] = (Object[])  mg.getRegisterData();
@@ -313,7 +362,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			return null;
 		}
 	}
-	
+
 	//Register a file of jars
 	@Override
 	public boolean register(File[] f, String classToBeExecuted) {
@@ -452,7 +501,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					if(hostPort.size()==0){
 						System.err.println("No class Found!!!");
 					}
-					
+
 					host = hostPort.get("IP");
 					port = hostPort.get("PORT");
 					mac = hostPort.get("MAC");
@@ -554,7 +603,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					if(hostPort.size()==0){
 						System.err.println("No class Found!!!");
 					}
-					
+
 					host = hostPort.get("IP");
 					port = hostPort.get("PORT");
 					mac = hostPort.get("MAC");
@@ -860,7 +909,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			Object... args) {
 
 		try {
-			
+
 			//Get host
 			String host = null,port = null,mac = null, portS = null;
 
@@ -868,14 +917,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			if (jars.containsKey(objectNickname)){
 				// Get host	
 
-			// Get host			
-			Map<String, String> hostPort = this.getDeviceMetadata(device);
+				// Get host			
+				Map<String, String> hostPort = this.getDeviceMetadata(device);
 
-			host = hostPort.get("IP");
-			port = hostPort.get("PORT");
-			mac = hostPort.get("MAC");
-			portS = hostPort.get("PORT_SUPER_PEER");
-			
+				host = hostPort.get("IP");
+				port = hostPort.get("PORT");
+				mac = hostPort.get("MAC");
+				portS = hostPort.get("PORT_SUPER_PEER");
+
 			}else{
 
 				Object[] argsLam = {serverAdd, String.valueOf(serverPort),device.getKey(),device.getValue(),objectNickname};
@@ -886,7 +935,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				if(hostPort.size()==0){
 					System.err.println("No class Found!!!");
 				}
-				
+
 				host = hostPort.get("IP");
 				port = hostPort.get("PORT");
 				mac = hostPort.get("MAC");
@@ -931,7 +980,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 						return d.getValue(); 
 				}				
 			}
-			
+
 			System.err.println("Device not found!!!");
 			return null;
 
@@ -990,7 +1039,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				if(hostPort.size()==0){
 					System.err.println("No class Found!!!");
 				}
-				
+
 				host = hostPort.get("IP");
 				port = hostPort.get("PORT");
 				mac = hostPort.get("MAC");
@@ -1117,6 +1166,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	@Override
 	public boolean instantiateGlobalVar(Object key,String nickName,
 			File[] jar, Object[] defaultVarValue) {
+		System.out.println("line 1120");
 		lock.readLock().lock();
 		try {
 			//Get Host
@@ -1167,6 +1217,32 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean instantiateGlobalVar(Object key, Object instance){
+		ProducerRecord<String, String> record =
+                new ProducerRecord<>("streams-jcl-input", key.toString(),
+                            instance.toString());
+		
+		System.out.println(record);
+		try {
+			RecordMetadata metadata = kafkaProducer.send(record).get();
+//			System.out.println(metadata);
+		} catch(Throwable t) {
+			System.err.println(t);
+		}
+		
+//
+//		Properties kafkaProperties = new Properties();
+//
+//		kafkaProperties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+//				"localhost:9092");
+//		kafkaProperties.put(ProducerConfig.CLIENT_ID_CONFIG, 
+//				"jclKafka-helloWorld");
+//		kafkaProperties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, 
+//				StringSerializer.class.getName());
+//		kafkaProperties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
+//				StringSerializer.class.getName());
+//
+//		KafkaProducer<String, String> kafkaProducer = new KafkaProducer<String, String>(kafkaProperties);
+//
 		lock.readLock().lock();
 		try {
 			//Get Host
@@ -1208,7 +1284,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				Object key = (ent.getKey().toString()+"�Map�"+gvname);
 				Object value = ent.getValue();
 				int hostId = rand.nextInt(0, key.hashCode(), devicesStorage.size());
-				
+
 				// ################ Serialization key ########################
 				buffer.clear();
 				ObjectWrap objW = new ObjectWrap(key);					
@@ -1221,8 +1297,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				value = ProtobufIOUtil.toByteArray(objW,scow, buffer);			
 				// ################ Serialization value ######################
 
-				
-				
+
+
 				if (gvList.containsKey(hostId)){
 					JCL_message_list_global_var gvm = gvList.get(hostId);
 					gvm.putVarKeyInstance(key, value);
@@ -1232,7 +1308,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					gvList.put(hostId, gvm);
 				}
 			}
-			
+
 			List<Future<JCL_result>> tick = new ArrayList<Future<JCL_result>>();
 
 			//Create on host using lambari
@@ -1283,11 +1359,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 			//Create bin request
 			for(Object key:set){
-								
+
 				ObjectWrap obj = scow.newMessage();
 				ProtobufIOUtil.mergeFrom((((ByteBuffer)key).getArray()), obj, scow);    		
-	    		Object k = obj.getobj();
-	    				
+				Object k = obj.getobj();
+
 				k = (k.toString()+"�Map�"+gvname);
 				int hostId = rand.nextInt(0, k.hashCode(), devicesStorage.size());
 
@@ -1296,7 +1372,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				ObjectWrap objW = new ObjectWrap(k);					
 				k = ProtobufIOUtil.toByteArray(objW,scow, buffer);			
 				// ################ Serialization key ########################
-								
+
 				if (gvList.containsKey(hostId)){
 					JCL_message_generic gvm = gvList.get(hostId);
 					((Set<implementations.util.Entry<Object, Object>>)gvm.getRegisterData()).add(new implementations.util.Entry<Object, Object>(k,key));
@@ -1337,10 +1413,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			String mac = hostPort.getValue().get("MAC");
 			String portS = hostPort.getValue().get("PORT_SUPER_PEER");
 
-				//instantiateGlobalVar using lambari
-				Object[] argsLam = {key,instance,host,port,mac,portS,hostId};
-				Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "instantiateGlobalVarReturn", argsLam);
-				return (t.get()).getCorrectResult();
+			//instantiateGlobalVar using lambari
+			Object[] argsLam = {key,instance,host,port,mac,portS,hostId};
+			Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "instantiateGlobalVarReturn", argsLam);
+			return (t.get()).getCorrectResult();
 
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
@@ -1407,7 +1483,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public Future<Boolean> instantiateGlobalVarAsy(Object key, Object instance) {
-		
+
 		lock.readLock().lock();
 
 		try {
@@ -1439,17 +1515,17 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public boolean instantiateGlobalVarOnDevice(Entry<String, String> device, Object key, String className, File[] jar,
 			Object[] args){
 		try {
-			
+
 			if(containsGlobalVar(key) || key==null) return false;
-			
+
 			Map<String, String> hostPort = this.getDeviceMetadata(device);
 
 			String host = hostPort.get("IP");
 			String port = hostPort.get("PORT");
 			String mac = hostPort.get("MAC");
 			String portS = hostPort.get("PORT_SUPER_PEER");
-			
-			
+
+
 			if(!jarsSlaves.containsKey(className)){
 				// Local register
 				JCL_message_register msg = new MessageRegisterImpl();
@@ -1460,10 +1536,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				jars.put(className, msg);
 				jarsSlaves.put(className, new ArrayList<String>());	
 			}
-			
+
 			Object[] argsLamS = {hostPort,key,serverAdd,serverPort};
 			Future<JCL_result> tS = jcl.execute("JCL_FacadeImplLamb", "instantiateGlobalVarOnHost", argsLamS);
-			
+
 			if (!(boolean)tS.get().getCorrectResult()){
 				System.err
 				.println("problem in JCL facade instantiateGlobalVarOnHost(String host, String nickName, String varName, File[] jars, Object[] defaultVarValue)");
@@ -1484,10 +1560,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				jarsSlaves.get(className).add(host+port+mac+portS);
 				return (Boolean)(t.get()).getCorrectResult();				
 			}		
-					
+
 		} catch (Exception e) {
 			System.err
-					.println("problem in JCL facade instantiateGlobalVarOnHost(String host, String nickName, String varName, File[] jars, Object[] defaultVarValue)");
+			.println("problem in JCL facade instantiateGlobalVarOnHost(String host, String nickName, String varName, File[] jars, Object[] defaultVarValue)");
 			return false;
 		}
 	}
@@ -1496,14 +1572,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public boolean instantiateGlobalVarOnDevice(Entry<String, String> device, Object key,
 			Object instance) {
 		try {
-			
+
 			if(containsGlobalVar(key) || key==null) return false;
 			for(Map.Entry<String,Map<String,String>> deviceI:devicesStorage){
 				if(deviceI.getKey().equals(device.getKey())){
-					
+
 					Object[] argsLamS = {deviceI.getValue(),key,serverAdd,serverPort};
 					Future<JCL_result> tS = jcl.execute("JCL_FacadeImplLamb", "instantiateGlobalVarOnHost", argsLamS);
-					
+
 					if (!(boolean)tS.get().getCorrectResult()){
 						System.err
 						.println("problem in JCL facade instantiateGlobalVarOnHost(String host, String nickName, String varName, File[] jars, Object[] defaultVarValue)");
@@ -1511,12 +1587,12 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 						.println("Erro in Server Register!!!!");
 						return false;
 					}
-					
+
 					String host = deviceI.getValue().get("IP");
 					String port = deviceI.getValue().get("PORT");
 					String mac = deviceI.getValue().get("MAC");
 					String portS = deviceI.getValue().get("PORT_SUPER_PEER");
-					
+
 					//instantiateGlobalVar using lambari
 					Object[] argsLam = {key,instance,host,port,mac,portS,new Integer(0)};
 					Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "instantiateGlobalVar", argsLam);
@@ -1620,6 +1696,33 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public JCL_result getValue(Object key) {
+//		System.out.println("JCL_FacadeImpl:getValue() 1625");
+		
+//        RecordMetadata metadata = producer.send(record).get();
+
+		//		Properties kafkaProperties = new Properties();
+		//
+		//		kafkaProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+		//				"localhost:9092");
+		//		kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, 
+		//				"jclKafka-helloWorld");
+		//		kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
+		//				StringSerializer.class.getName());
+		//		kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
+		//				StringSerializer.class.getName());
+		//		KafkaConsumer<String, String> kafkaConsumer = new KafkaConsumer<String, String>(kafkaProperties);
+		//
+		//		Collection<String> topics = new ArrayList<String>();
+		//		kafkaConsumer.subscribe(topics);
+		//		
+		//		Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook"){
+		//			@Override
+		//			public void run () {
+		//				System.out.println("USER " + "JCLKAFKA" + " WAS UNREGISTERED");
+		//				kafkaConsumer.close();
+		//			}
+		//		});
+
 		lock.readLock().lock();
 		try {
 			//Get Host			
@@ -1652,7 +1755,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 			JCL_result re = tick.get();
 			if (re.getCorrectResult()=="no result");re.setCorrectResult(null);
-			
+
 			return re;
 
 		} catch (Exception e) {
@@ -1702,7 +1805,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			JCL_result re = tick.get();
 			if (re.getCorrectResult()=="no result");re.setCorrectResult(null);
 
-			
+
 			return re;
 
 		} catch (Exception e){
@@ -2002,9 +2105,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	//Get HashMap
-//	public static <K, V> Map<K, V> GetHashMap(String gvName,String ClassName,File[] f){
-//		return new JCLHashMap<K, V>(gvName,ClassName,f);
-//	}
+	//	public static <K, V> Map<K, V> GetHashMap(String gvName,String ClassName,File[] f){
+	//		return new JCLHashMap<K, V>(gvName,ClassName,f);
+	//	}
 
 	public static JCL_facade getInstance() {
 		return Holder.getInstance();
@@ -2013,7 +2116,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public static JCL_facade getInstancePacu() {
 		Properties properties = new Properties();
 		try {
-		    properties.load(new FileInputStream("../jcl_conf/config.properties"));
+			properties.load(new FileInputStream("../jcl_conf/config.properties"));
 		}catch (FileNotFoundException e){					
 			System.err.println("File not found (../jcl_conf/config.properties) !!!!!");
 			System.out.println("Create properties file ../jcl_conf/config.properties.");
@@ -2021,14 +2124,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				File file = new File("../jcl_conf/config.properties");
 				file.getParentFile().mkdirs(); // Will create parent directories if not exists
 				file.createNewFile();
-								
+
 				OutputStream output = new FileOutputStream(file,false);
 
 				// set the properties value
 				properties.setProperty("distOrParell", "true");
 				properties.setProperty("serverMainPort", "6969");
 				properties.setProperty("superPeerMainPort", "6868");
-				
+
 
 				properties.setProperty("routerMainPort", "7070");
 				properties.setProperty("serverMainAdd", "127.0.0.1");
@@ -2054,7 +2157,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				properties.setProperty("enableDinamicUp", "false");
 				properties.setProperty("findServerTimeOut", "1000");
 				properties.setProperty("findHostTimeOut", "1000");
-						 
+
 				properties.setProperty("enableFaultTolerance", "false");
 				properties.setProperty("verbose", "true");
 				properties.setProperty("encryption", "false");
@@ -2064,11 +2167,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				properties.setProperty("mqttBrokerPort", "1883");
 
 				//save properties to project root folder
-			
+
 				properties.store(output, null);
 			} catch (IOException e1) {
 				// TODO Auto-generated catch block
-					e1.printStackTrace();
+				e1.printStackTrace();
 			}
 		}catch (IOException e) {
 			// TODO Auto-generated catch block
@@ -2095,7 +2198,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 			Properties properties = new Properties();
 			try {
-			    properties.load(new FileInputStream("../jcl_conf/config.properties"));
+				properties.load(new FileInputStream("../jcl_conf/config.properties"));
 			}catch (FileNotFoundException e){					
 				System.err.println("File not found (../jcl_conf/config.properties) !!!!!");
 				System.out.println("Create properties file ../jcl_conf/config.properties.");
@@ -2103,14 +2206,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					File file = new File("../jcl_conf/config.properties");
 					file.getParentFile().mkdirs(); // Will create parent directories if not exists
 					file.createNewFile();
-									
+
 					OutputStream output = new FileOutputStream(file,false);
 
 					// set the properties value
 					properties.setProperty("distOrParell", "true");
 					properties.setProperty("serverMainPort", "6969");
 					properties.setProperty("superPeerMainPort", "6868");
-					
+
 
 					properties.setProperty("routerMainPort", "7070");
 					properties.setProperty("serverMainAdd", "127.0.0.1");
@@ -2136,7 +2239,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					properties.setProperty("enableDinamicUp", "false");
 					properties.setProperty("findServerTimeOut", "1000");
 					properties.setProperty("findHostTimeOut", "1000");
-							 
+
 					properties.setProperty("enableFaultTolerance", "false");
 					properties.setProperty("verbose", "true");
 					properties.setProperty("encryption", "false");
@@ -2146,11 +2249,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					properties.setProperty("mqttBrokerPort", "1883");
 
 					//save properties to project root folder
-				
+
 					properties.store(output, null);
 				} catch (IOException e1) {
 					// TODO Auto-generated catch block
-						e1.printStackTrace();
+					e1.printStackTrace();
 				}
 			}catch (IOException e) {
 				// TODO Auto-generated catch block
@@ -2244,27 +2347,27 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 
 		//add key list to hash key map
-//		protected boolean hashAdd(String gvName,java.util.Map.Entry<String, String> hostIp,List<Object> keys, int IDhost){
-//
-//			//Get Ip host
-//			Entry<String, Map<String, String>> hostPort = devicesStorage.get(IDhost);
-//
-//			String host = hostPort.getValue().get("IP");
-//			String port = hostPort.getValue().get("PORT");
-//			String mac = hostPort.getValue().get("MAC");
-//			String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-//
-//			// hashAdd using lambari
-//			JCL_message_generic mc = new MessageGenericImpl();
-//			Object[] ob = {gvName,keys};
-//			mc.setRegisterData(ob);
-//			mc.setType(36);
-//			JCL_connector controlConnector = new ConnectorImpl();
-//			controlConnector.connect(host,Integer.parseInt(port),mac);
-//			JCL_message_generic mr = (JCL_message_generic) controlConnector.sendReceiveG(mc, portS);
-//			controlConnector.disconnect();
-//			return (Boolean) mr.getRegisterData();
-//		}
+		//		protected boolean hashAdd(String gvName,java.util.Map.Entry<String, String> hostIp,List<Object> keys, int IDhost){
+		//
+		//			//Get Ip host
+		//			Entry<String, Map<String, String>> hostPort = devicesStorage.get(IDhost);
+		//
+		//			String host = hostPort.getValue().get("IP");
+		//			String port = hostPort.getValue().get("PORT");
+		//			String mac = hostPort.getValue().get("MAC");
+		//			String portS = hostPort.getValue().get("PORT_SUPER_PEER");
+		//
+		//			// hashAdd using lambari
+		//			JCL_message_generic mc = new MessageGenericImpl();
+		//			Object[] ob = {gvName,keys};
+		//			mc.setRegisterData(ob);
+		//			mc.setType(36);
+		//			JCL_connector controlConnector = new ConnectorImpl();
+		//			controlConnector.connect(host,Integer.parseInt(port),mac);
+		//			JCL_message_generic mr = (JCL_message_generic) controlConnector.sendReceiveG(mc, portS);
+		//			controlConnector.disconnect();
+		//			return (Boolean) mr.getRegisterData();
+		//		}
 
 		//remove key from hash key map
 		protected boolean hashRemove(String gvName,Object Key, int IDhost){
@@ -2306,7 +2409,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			String port = hostPort.getValue().get("PORT");
 			String mac = hostPort.getValue().get("MAC");
 			String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-			
+
 			// ################ Serialization key ########################
 			LinkedBuffer buffer = LinkedBuffer.allocate(1048576);
 			ObjectWrap objW = new ObjectWrap(Key);	
@@ -2406,7 +2509,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		protected Map<Integer,JCL_message_generic> getHashQueue(Queue queue,Set key, String gvname){
 			try {
 				Map<Integer,JCL_message_generic> gvList = getBinValueInterator(key, gvname);			
-				
+
 				//getHashQueue using lambari
 				Iterator<Entry<Integer,JCL_message_generic>> intGvList = gvList.entrySet().iterator();
 
@@ -2532,9 +2635,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	@Override
 	public boolean setDeviceConfig(Entry<String, String> deviceNickname, Map<String, String> metadata) {
 		try {
-			
+
 			if(metadata==null)return false;
-			
+
 			Map<String, String> hostData = this.getDeviceMetadata(deviceNickname);
 
 			String deviceIP = hostData.get("IP");
