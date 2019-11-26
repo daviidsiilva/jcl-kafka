@@ -13,7 +13,7 @@ JCL event based
 - [x] JCL_User subscribe to JCL_Host
 - [x] JCL_User perform instantiateGlobalVar(String, String) publishing to JCL_Host
 - [x] JCL_User perform getValue(Object) locally
-- []  JCL_User perform getValue(Object) without return some null values
+- [ ] JCL_User perform getValue(Object) without return some null values
 
 ## Useful Commands
 - Initiate a new Zookeeper Server
