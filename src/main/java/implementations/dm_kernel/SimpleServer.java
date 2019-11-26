@@ -1,7 +1,5 @@
 package implementations.dm_kernel;
 
-import implementations.sm_kernel.JCL_FacadeImpl;
-import interfaces.kernel.JCL_facade;
 import interfaces.kernel.JCL_message;
 import interfaces.kernel.JCL_message_control;
 import interfaces.kernel.JCL_message_result;
@@ -16,12 +14,20 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Properties;
 import java.util.concurrent.locks.ReadWriteLock;
+
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+
 import commom.Constants;
 import commom.JCL_resultImpl;
 
@@ -33,17 +39,24 @@ public class SimpleServer extends Thread{
 	protected final ServerSocketChannel serverSocket;
 	private LinkedBuffer buffer = LinkedBuffer.allocate(1048576);
 	private Map<Integer,Map<String,Map<String,String>>> devices;
-		
 	
-	public SimpleServer(int port, Map<Integer,Map<String,Map<String,String>>> devices,ReadWriteLock lock) throws IOException{
+	/** 3.0 begin **/
+	private Map<String, String> localMemory;
+	/** 3.0 end **/
+	
+	public SimpleServer(int port, Map<Integer,Map<String,Map<String,String>>> devices,ReadWriteLock lock, Map<String, String> localMemory) throws IOException{
 				
 		//Init varible
 		this.port = port;
 		this.devices = devices;
 		this.selector = Selector.open();
 		this.lock = lock;
-		this.serverSocket = ServerSocketChannel.open();				
+		this.serverSocket = ServerSocketChannel.open();
 	//	this.jcl = JCL_FacadeImpl.getInstance();
+		
+		/** 3.0 begin **/
+		this.localMemory = localMemory;
+		/** 3.0 end **/
 	}
 	
 	public void end(){
@@ -61,8 +74,46 @@ public class SimpleServer extends Thread{
 		SelectionKey key;
 		Iterator<SelectionKey> iter;
 		
+		/** 3.0 begin **/
+		Properties consumerProperties = new Properties();
+		consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+				"localhost:9092");
+		consumerProperties.put(
+			ConsumerConfig.CLIENT_ID_CONFIG, 
+			"jcl-client");
+		consumerProperties.put(
+			ConsumerConfig.GROUP_ID_CONFIG, 
+			"jcl-consumer-group");
+		consumerProperties.put(
+			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
+			StringDeserializer.class.getName());
+		consumerProperties.put(
+			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
+			StringDeserializer.class.getName());
+		
+		Consumer<String, String> kafkaConsumer = new KafkaConsumer<>(consumerProperties);
+		
+		try {
+			kafkaConsumer.subscribe(
+				Arrays.asList("jcl-output")
+			);
+			
+		} catch(Throwable t) {
+			kafkaConsumer.close();
+		}
+		
+		ConsumerRecords<String, String> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(1));
+		/** 3.0 end **/
+		
 		try {			
 	        while(this.serverSocket.isOpen()){
+	    
+	        	/** 3.0 begin **/
+	        	for(ConsumerRecord<String, String> record : consumedRecords) {
+	    			System.out.println("consumedRecord" + record);
+	    			this.localMemory.put(record.key(), record.value());
+	    		}
+	        	/** 3.0 end **/
 	        	
 	        	//loop wait for connection
 	        	this.selector.select();

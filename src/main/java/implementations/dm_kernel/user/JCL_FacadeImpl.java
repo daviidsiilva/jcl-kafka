@@ -43,7 +43,6 @@ import java.io.OutputStream;
 import implementations.util.ByteBuffer;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -64,16 +63,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import javassist.ClassPool;
@@ -108,7 +101,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private int port;
 
 	private Map<String, String> localMemory;
-	private KafkaConsumer<String, String> kafkaConsumer;
 	private Producer<String, String> kafkaProducer;
 
 	protected JCL_FacadeImpl(Properties properties){
@@ -130,43 +122,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		this.kafkaProducer = new KafkaProducer<>(producerProperties);
 		
-		Properties consumerProperties = new Properties();
-		consumerProperties.put(
-			ConsumerConfig.CLIENT_ID_CONFIG, 
-			"jcl-client");
-		consumerProperties.put(
-			ConsumerConfig.GROUP_ID_CONFIG, 
-			"jcl-consumer-group");
-		consumerProperties.put(
-			ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-			"localhost" + ":" + "9092");
-		consumerProperties.put(
-			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
-			StringDeserializer.class.getName());
-		consumerProperties.put(
-			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
-			StringDeserializer.class.getName());
-		
-		try {
-			this.kafkaConsumer = new KafkaConsumer<>(consumerProperties);
-			this.kafkaConsumer.subscribe(Arrays.asList("jcl-output"));
-			
-		} catch(Throwable t) {
-			System
-				.err
-				.println("err: " + t);
-			
-			this.kafkaConsumer
-				.close();
-		}
+		this.localMemory = new HashMap<String, String>();
 		/** 3.0 end **/
-//		this.localMemory = new HashMap<String, String>();
-//		
-//		ConsumerRecords<String, String> record = this.kafkaConsumer.poll(Duration.ofSeconds(0));
-//		System.out.println(record);
-//		this.localMemory.put(record.key, record.value);
 		
-
 		try {
 			//single pattern
 			if (instance == null){
@@ -256,10 +214,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			}
 
 			//Start simple server
-			if(DA){
-				simpleSever = new SimpleServer(this.port,devices,lock);
+//			if(DA){
+				simpleSever = new SimpleServer(this.port,devices,lock, this.localMemory);
 				simpleSever.start();				
-			}
+//			}
 
 			//getHosts using lambari
 			int type = 5;
@@ -1213,7 +1171,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean instantiateGlobalVar(Object key, Object instance){
-		ProducerRecord<String, String> record = new ProducerRecord<>(
+		ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
 			"jcl-input", 
 			key.toString(),
             instance.toString()
@@ -1221,9 +1179,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		try {
 //			kafkaProducer.beginTransaction();
-			RecordMetadata metadata = this.kafkaProducer.send(record).get();
+			System.out.println("producedRecord(" + producedRecord.key() + ", " + producedRecord.value() + ")");
+			
+			this.kafkaProducer.send(producedRecord).get();
 //			kafkaProducer.commitTransaction();
-			System.out.println(metadata);
+//			System.out.println(metadata);
 		} catch(Throwable t) {
 //			kafkaProducer.abortTransaction();
 			System.err.println(t);
@@ -1697,7 +1657,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	@Override
 	public JCL_result getValue(Object key) {
 		
-//		return (JCL_result) this.localMemory.get(key);
+		System.out.println("getValue(" + key + ") -> " + this.localMemory.get(key));
 
 		lock.readLock().lock();
 		try {

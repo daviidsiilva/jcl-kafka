@@ -249,7 +249,6 @@ public class MainHost extends Server{
 				
 				builder
 					.<String, String>stream("jcl-input")
-					.mapValues(value -> String.valueOf(value.concat("")))
 					.to("jcl-output");
 
 				final Topology topology = builder.build();
@@ -282,6 +281,7 @@ public class MainHost extends Server{
 				}
 			}
 		};
+		
 		kafkaCluster.start();
 		/** 3.0 end **/
 
