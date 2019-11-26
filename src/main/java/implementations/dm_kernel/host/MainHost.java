@@ -223,44 +223,43 @@ public class MainHost extends Server{
 
 	@Override
 	protected void beforeListening() {
-		// Kafka begin
+		
+		/** 3.0 begin **/
 		Thread kafkaCluster = new Thread() {
 			public void run() {
-				Properties kafkaProperties = new Properties();
+				Properties streamProperties = new Properties();
 
-				kafkaProperties.put(
-						StreamsConfig.APPLICATION_ID_CONFIG, 
-						"streams-jcl");
-				kafkaProperties.put(
-						StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, 
-						"localhost:9092");
-				kafkaProperties.put(
-						StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, 
-						Serdes.String().getClass());
-				kafkaProperties.put(
-						StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, 
-						Serdes.String().getClass());
+				streamProperties.put(
+					StreamsConfig.APPLICATION_ID_CONFIG, 
+					"jcl-stream");
+				streamProperties.put(
+					StreamsConfig.CLIENT_ID_CONFIG,
+					"jcl-client");
+				streamProperties.put(
+					StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, 
+					"localhost:9092");
+				streamProperties.put(
+					StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, 
+					Serdes.String().getClass());
+				streamProperties.put(
+					StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, 
+					Serdes.String().getClass());
 
 				final StreamsBuilder builder = new StreamsBuilder();
-
-				KStream<String, String> source = builder.stream(
-						"streams-jcl-input");
 				
-				source.to("streams-jcl-output");
-				
-//				source.flatMapValues(value -> Arrays.asList(value.toLowerCase(Locale.getDefault()).split("\\W+")))
-//				.groupBy((key, value) -> value)
-//				.count(Materialized.<String, Long, KeyValueStore<Bytes, byte[]>>as("store"))
-//				.toStream()
-//				.to("streams-jcl-output", Produced.with(Serdes.String(), Serdes.Long()));
+				builder
+					.<String, String>stream("jcl-input")
+					.mapValues(value -> String.valueOf(value.concat("")))
+					.to("jcl-output");
 
 				final Topology topology = builder.build();
-
-				final KafkaStreams streams = new KafkaStreams(topology, kafkaProperties);
-
-				final CountDownLatch latch = new CountDownLatch(1);
 				
-				System.out.println("HOST " + JCLKAFKA + " is OK");
+				KafkaStreams streams = new KafkaStreams(
+					topology, 
+					streamProperties
+				);
+				
+				final CountDownLatch latch = new CountDownLatch(1);
 				
 				Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook"){
 					@Override
@@ -271,18 +270,20 @@ public class MainHost extends Server{
 					}
 				});
 
-				try {
+				try {			
 					streams.start();
+					System.out.println("HOST " + JCLKAFKA + " is OK");
 					latch.await();
 				} catch (Throwable t) {
-					System.out.println(t);
+					System
+						.err
+						.println(t);
 					System.exit(1);
 				}
 			}
 		};
-		
 		kafkaCluster.start();
-		// Kafka end
+		/** 3.0 end **/
 
 		// Read properties file.
 		Properties properties = new Properties();

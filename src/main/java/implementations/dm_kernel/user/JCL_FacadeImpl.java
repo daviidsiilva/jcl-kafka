@@ -39,10 +39,11 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+
 import implementations.util.ByteBuffer;
 
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -56,7 +57,6 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -66,13 +66,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
@@ -107,51 +107,20 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private static int delta;
 	private int port;
 
-	private Collection<String> kafkaTopic;
+	private Map<String, String> localMemory;
 	private KafkaConsumer<String, String> kafkaConsumer;
 	private Producer<String, String> kafkaProducer;
 
 	protected JCL_FacadeImpl(Properties properties){
-//		AdminClient adminClient = AdminClient.create(properties);
-//		NewTopic newTopic = new NewTopic("name", 1, (short) 1);
-//		Collection<NewTopic> topicsList = new ArrayList<NewTopic>();
-//
-//		topicsList.add(newTopic);
-//		adminClient.createTopics(topicsList);
-//		adminClient.close();
-//
-//		kafkaConsumer = new KafkaConsumer<String, String>(properties);
-//		kafkaConsumer.subscribe(topicsList);
 		
-		Properties consumerProperties = new Properties();
-		
-		consumerProperties .put(
-			ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-			"localhost" + ":" + "9092");
-		consumerProperties .put(
-			ConsumerConfig.CLIENT_ID_CONFIG, 
-			"jcl");
-		consumerProperties .put(
-			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
-			StringDeserializer.class.getName());
-		consumerProperties .put(
-			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
-			StringDeserializer.class.getName());
-		
-		Consumer<String, String> consumer = new KafkaConsumer<String, String>(consumerProperties);
-		consumer.close();
-		
-		kafkaTopic = new ArrayList<String>();
-		kafkaTopic.add("jcl");
-		
+		/** 3.0 begin **/
 		Properties producerProperties = new Properties();
-		
+		producerProperties.put(
+			ProducerConfig.CLIENT_ID_CONFIG, 
+			"jcl-client");
 		producerProperties.put(
 			ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
 			"localhost" + ":" + "9092");
-		producerProperties.put(
-			ProducerConfig.CLIENT_ID_CONFIG, 
-			"jcl");
 		producerProperties.put(
 			ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, 
 			StringSerializer.class.getName());
@@ -159,17 +128,44 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
 			StringSerializer.class.getName());
 		
-		kafkaProducer = new KafkaProducer<String, String>(producerProperties);
-//		kafkaProducer
+		this.kafkaProducer = new KafkaProducer<>(producerProperties);
 		
-//		consumer.
+		Properties consumerProperties = new Properties();
+		consumerProperties.put(
+			ConsumerConfig.CLIENT_ID_CONFIG, 
+			"jcl-client");
+		consumerProperties.put(
+			ConsumerConfig.GROUP_ID_CONFIG, 
+			"jcl-consumer-group");
+		consumerProperties.put(
+			ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+			"localhost" + ":" + "9092");
+		consumerProperties.put(
+			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
+			StringDeserializer.class.getName());
+		consumerProperties.put(
+			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
+			StringDeserializer.class.getName());
 		
-		Thread teste = new Thread() {
-			public void run() {
-				System.out.println(">>>>>>>>>>>>> KAFKA CODE FINISHED");
-			}
-		};
-		teste.start();
+		try {
+			this.kafkaConsumer = new KafkaConsumer<>(consumerProperties);
+			this.kafkaConsumer.subscribe(Arrays.asList("jcl-output"));
+			
+		} catch(Throwable t) {
+			System
+				.err
+				.println("err: " + t);
+			
+			this.kafkaConsumer
+				.close();
+		}
+		/** 3.0 end **/
+//		this.localMemory = new HashMap<String, String>();
+//		
+//		ConsumerRecords<String, String> record = this.kafkaConsumer.poll(Duration.ofSeconds(0));
+//		System.out.println(record);
+//		this.localMemory.put(record.key, record.value);
+		
 
 		try {
 			//single pattern
@@ -1217,15 +1213,19 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean instantiateGlobalVar(Object key, Object instance){
-		ProducerRecord<String, String> record =
-                new ProducerRecord<>("streams-jcl-input", key.toString(),
-                            instance.toString());
+		ProducerRecord<String, String> record = new ProducerRecord<>(
+			"jcl-input", 
+			key.toString(),
+            instance.toString()
+        );
 		
-		System.out.println(record);
 		try {
-			RecordMetadata metadata = kafkaProducer.send(record).get();
-//			System.out.println(metadata);
+//			kafkaProducer.beginTransaction();
+			RecordMetadata metadata = this.kafkaProducer.send(record).get();
+//			kafkaProducer.commitTransaction();
+			System.out.println(metadata);
 		} catch(Throwable t) {
+//			kafkaProducer.abortTransaction();
 			System.err.println(t);
 		}
 		
@@ -1696,32 +1696,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public JCL_result getValue(Object key) {
-//		System.out.println("JCL_FacadeImpl:getValue() 1625");
 		
-//        RecordMetadata metadata = producer.send(record).get();
-
-		//		Properties kafkaProperties = new Properties();
-		//
-		//		kafkaProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-		//				"localhost:9092");
-		//		kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, 
-		//				"jclKafka-helloWorld");
-		//		kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
-		//				StringSerializer.class.getName());
-		//		kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
-		//				StringSerializer.class.getName());
-		//		KafkaConsumer<String, String> kafkaConsumer = new KafkaConsumer<String, String>(kafkaProperties);
-		//
-		//		Collection<String> topics = new ArrayList<String>();
-		//		kafkaConsumer.subscribe(topics);
-		//		
-		//		Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook"){
-		//			@Override
-		//			public void run () {
-		//				System.out.println("USER " + "JCLKAFKA" + " WAS UNREGISTERED");
-		//				kafkaConsumer.close();
-		//			}
-		//		});
+//		return (JCL_result) this.localMemory.get(key);
 
 		lock.readLock().lock();
 		try {
