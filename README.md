@@ -17,10 +17,16 @@ JCL event based
 
 ## Useful Commands
 - Initiate a new Zookeeper Server
-```.\bin\windows\zookeeper-server-start.bat config\zookeeper.properties```
+```bash
+.\bin\windows\zookeeper-server-start.bat config\zookeeper.properties
+```
 
 - Initiate a new Kafka Server
-```.\bin\windows\kafka-server-start.bat config\server.properties```
+```bash
+.\bin\windows\kafka-server-start.bat config\server.properties
+```
 
 - Initiate a Kafka Consumer from beginning streams
-```.\bin\windows\kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic jcl-output --from-beginning```
+```bash
+.\bin\windows\kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic jcl-output --from-beginning
+```
