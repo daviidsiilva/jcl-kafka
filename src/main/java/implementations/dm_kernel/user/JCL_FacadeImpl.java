@@ -1171,6 +1171,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean instantiateGlobalVar(Object key, Object instance){
+		
+		/** begin 3.0 **/
 		ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
 			"jcl-input", 
 			key.toString(),
@@ -1178,57 +1180,18 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
         );
 		
 		try {
-//			kafkaProducer.beginTransaction();
-			System.out.println("producedRecord(" + producedRecord.key() + ", " + producedRecord.value() + ")");
-			
 			this.kafkaProducer.send(producedRecord).get();
-//			kafkaProducer.commitTransaction();
-//			System.out.println(metadata);
 		} catch(Throwable t) {
-//			kafkaProducer.abortTransaction();
-			System.err.println(t);
+			System
+				.err
+				.println(t);
+			
+			return false;
 		}
 		
-//
-//		Properties kafkaProperties = new Properties();
-//
-//		kafkaProperties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-//				"localhost:9092");
-//		kafkaProperties.put(ProducerConfig.CLIENT_ID_CONFIG, 
-//				"jclKafka-helloWorld");
-//		kafkaProperties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, 
-//				StringSerializer.class.getName());
-//		kafkaProperties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
-//				StringSerializer.class.getName());
-//
-//		KafkaProducer<String, String> kafkaProducer = new KafkaProducer<String, String>(kafkaProperties);
-//
-		lock.readLock().lock();
-		try {
-			//Get Host
-			int hostId = rand.nextInt(delta, key.hashCode(), devicesStorage.size());
-			Entry<String, Map<String, String>> hostPort = devicesStorage.get(hostId);
-
-			String host = hostPort.getValue().get("IP");
-			String port = hostPort.getValue().get("PORT");
-			String mac = hostPort.getValue().get("MAC");
-			String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-
-
-
-			//instantiateGlobalVar using lambari
-			Object[] argsLam = {key,instance,host,port,mac,portS,hostId};
-			Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "instantiateGlobalVar", argsLam);
-			return (Boolean) (t.get()).getCorrectResult();
-
-		} catch (Exception e) {
-			System.err
-			.println("problem in JCL facade instantiateGlobalVar(Object key, Object instance)");
-			e.printStackTrace();
-			return false;
-		}finally {
-			lock.readLock().unlock();
-		}
+		return true;
+		
+		/** end 3.0 **/
 	}
 
 	//Use on JCLHashMap to inst bins values
@@ -1656,53 +1619,16 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public JCL_result getValue(Object key) {
+
+		JCL_result kafkaReturn = new JCL_resultImpl();
 		
-		System.out.println("getValue(" + key + ") -> " + this.localMemory.get(key));
-
-		lock.readLock().lock();
 		try {
-			//Get Host			
-			int[] t = rand.HostList(delta, key.hashCode(), devicesStorage.size());
-			List<Future<JCL_result>> ticks = new ArrayList<Future<JCL_result>>();
-			for(int hostId:t){
-				Entry<String, Map<String, String>> hostPort = devicesStorage.get(hostId);
-
-				String host = hostPort.getValue().get("IP");
-				String port = hostPort.getValue().get("PORT");
-				String mac = hostPort.getValue().get("MAC");
-				String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-
-				//getValue using lambari
-				Object[] argsLam = {key,host,port,mac,portS,hostId};
-				ticks.add(jcl.execute("JCL_FacadeImplLamb", "getValue", argsLam));
-			}
-
-			for(Future<JCL_result> tick:ticks){
-				JCL_result result = tick.get();
-				if(!result.getCorrectResult().toString().equals("No value found!")){
-					return 	result;
-				}			
-			}
-
-			//getValue using lambari on Server
-			int hostId = rand.nextInt(delta, key.hashCode(), devicesStorage.size());
-			Object[] argsLam = {key,serverAdd,serverPort,hostId};
-			Future<JCL_result> tick = jcl.execute("JCL_FacadeImplLamb", "getValueOnHost", argsLam);
-
-			JCL_result re = tick.get();
-			if (re.getCorrectResult()=="no result");re.setCorrectResult(null);
-
-			return re;
-
-		} catch (Exception e) {
-			System.err.println("problem in JCL facade getValue(Object key)");
-			JCL_result jclr = new JCL_resultImpl();
-			jclr.setErrorResult(e);
-			e.printStackTrace();
-			return jclr;
-		} finally {
-			lock.readLock().unlock();
+			kafkaReturn.setCorrectResult(this.localMemory.get(key));
+		} catch(Exception e) {
+			kafkaReturn.setErrorResult(e);
 		}
+		
+		return kafkaReturn;
 	}
 
 	@Override

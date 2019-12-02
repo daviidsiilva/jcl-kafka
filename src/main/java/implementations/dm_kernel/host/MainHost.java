@@ -54,6 +54,7 @@ import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.ForeachAction;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.KTable;
 import org.apache.kafka.streams.kstream.Materialized;
@@ -247,8 +248,15 @@ public class MainHost extends Server{
 
 				final StreamsBuilder builder = new StreamsBuilder();
 				
-				builder
-					.<String, String>stream("jcl-input")
+				KStream<String, String> source = builder.<String, String>stream("jcl-input");
+				
+				source.foreach(new ForeachAction<String, String>() {
+				    public void apply(String key, String value) {
+				        System.out.println("received " + key + ": " + value);
+				    }
+				 });
+				
+				source
 					.to("jcl-output");
 
 				final Topology topology = builder.build();
@@ -271,6 +279,7 @@ public class MainHost extends Server{
 
 				try {			
 					streams.start();
+					
 					System.out.println("HOST " + JCLKAFKA + " is OK");
 					latch.await();
 				} catch (Throwable t) {

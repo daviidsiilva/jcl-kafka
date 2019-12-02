@@ -15,8 +15,10 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -99,50 +101,54 @@ public class SimpleServer extends Thread{
 			);
 			
 		} catch(Throwable t) {
+			System
+				.err
+				.println(t);
 			kafkaConsumer.close();
 		}
 		
-		ConsumerRecords<String, String> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(1));
+		ConsumerRecords<String, String> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
 		/** 3.0 end **/
 		
 		try {			
-	        while(this.serverSocket.isOpen()){
+	        while(true){
 	    
 	        	/** 3.0 begin **/
-	        	for(ConsumerRecord<String, String> record : consumedRecords) {
-	    			System.out.println("consumedRecord" + record);
-	    			this.localMemory.put(record.key(), record.value());
-	    		}
+	        	consumedRecords.forEach(
+	        		(record) -> this.localMemory.put(record.key(), record.value())
+	        	);
+	        	
+	        	consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
 	        	/** 3.0 end **/
 	        	
 	        	//loop wait for connection
-	        	this.selector.select();
-	        	iter = this.selector.selectedKeys().iterator();
+//	        	this.selector.select();
+//	        	iter = this.selector.selectedKeys().iterator();
             	
             	//new iterator
-            	while (iter.hasNext()){           			
-            			key = iter.next();
-            			iter.remove();
-            			
-            			if(!key.isValid()){
-            				continue;
-            			}
-            			
-            			if (key.isConnectable()) { 
-            				((SocketChannel)key.channel()).finishConnect(); 
-            			}
-            			
-        				// accept connection 
-            			if (key.isAcceptable()) this.handleAccept(key);
-            			
-        				// ...read messages...
-            			if (key.isReadable())handleRead(key); 
-            			
-            	}            	
+//            	while (iter.hasNext()){           			
+//            			key = iter.next();
+//            			iter.remove();
+//            			
+//            			if(!key.isValid()){
+//            				continue;
+//            			}
+//            			
+//            			if (key.isConnectable()) { 
+//            				((SocketChannel)key.channel()).finishConnect(); 
+//            			}
+//            			
+//        				// accept connection 
+//            			if (key.isAcceptable()) this.handleAccept(key);
+//            			
+//        				// ...read messages...
+//            			if (key.isReadable())handleRead(key); 
+//            			
+//            	}            	
 	        }	        	        
 		} catch (Exception e) {           
-		//	System.err.println( "Error accepting client connection.");
-		//	e.printStackTrace();
+			System.err.println( "Error accepting client connection.");
+			e.printStackTrace();
        } finally {
         	try {
         		selector.close();
