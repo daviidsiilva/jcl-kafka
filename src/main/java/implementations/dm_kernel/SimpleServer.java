@@ -44,20 +44,21 @@ public class SimpleServer extends Thread{
 	
 	/** 3.0 begin **/
 	private Map<String, String> localMemory;
+	private Object facade;
 	/** 3.0 end **/
 	
-	public SimpleServer(int port, Map<Integer,Map<String,Map<String,String>>> devices,ReadWriteLock lock, Map<String, String> localMemory) throws IOException{
+	public SimpleServer(int port, Map<Integer,Map<String,Map<String,String>>> devices,ReadWriteLock lock, Map<String, String> localMemory, Object facade) throws IOException{
 				
 		//Init varible
-		this.port = port;
+		this.port = 4952;
 		this.devices = devices;
 		this.selector = Selector.open();
 		this.lock = lock;
 		this.serverSocket = ServerSocketChannel.open();
-	//	this.jcl = JCL_FacadeImpl.getInstance();
 		
 		/** 3.0 begin **/
 		this.localMemory = localMemory;
+		this.facade = facade;
 		/** 3.0 end **/
 	}
 	
@@ -73,10 +74,8 @@ public class SimpleServer extends Thread{
 				
 	public void run(){
 		openServerSocket();
-		SelectionKey key;
-		Iterator<SelectionKey> iter;
 		
-		/** 3.0 begin **/
+		/** 3.0 begin **/		
 		Properties consumerProperties = new Properties();
 		consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
 				"localhost:9092");
@@ -110,43 +109,25 @@ public class SimpleServer extends Thread{
 		ConsumerRecords<String, String> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
 		/** 3.0 end **/
 		
-		try {			
+		try {
 	        while(true){
-	    
 	        	/** 3.0 begin **/
-	        	consumedRecords.forEach(
-	        		(record) -> this.localMemory.put(record.key(), record.value())
-	        	);
-	        	
-	        	consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
+	        	synchronized(this.localMemory) {	
+	        		consumedRecords.forEach(
+        				(record) -> {
+        					this.localMemory.put(record.key(), record.value());
+        					this.facade.notify();
+        					System.out.println("notify()");
+        					
+        				}
+    				);
+	        		
+	        		consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));	        		
+	        	}
 	        	/** 3.0 end **/
-	        	
-	        	//loop wait for connection
-//	        	this.selector.select();
-//	        	iter = this.selector.selectedKeys().iterator();
-            	
-            	//new iterator
-//            	while (iter.hasNext()){           			
-//            			key = iter.next();
-//            			iter.remove();
-//            			
-//            			if(!key.isValid()){
-//            				continue;
-//            			}
-//            			
-//            			if (key.isConnectable()) { 
-//            				((SocketChannel)key.channel()).finishConnect(); 
-//            			}
-//            			
-//        				// accept connection 
-//            			if (key.isAcceptable()) this.handleAccept(key);
-//            			
-//        				// ...read messages...
-//            			if (key.isReadable())handleRead(key); 
-//            			
-//            	}            	
 	        }	        	        
 		} catch (Exception e) {           
+			System.err.println( "SimpleServer");
 			System.err.println( "Error accepting client connection.");
 			e.printStackTrace();
        } finally {
@@ -159,7 +140,6 @@ public class SimpleServer extends Thread{
         	}
         }
 	}	
-
 	
     private void openServerSocket() {
         try {

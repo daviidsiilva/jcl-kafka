@@ -11,7 +11,9 @@ import interfaces.kernel.JCL_task;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.List;
@@ -25,6 +27,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 
 import commom.Constants;
 import commom.GenericConsumer;
@@ -44,6 +52,11 @@ public class JCL_FacadeImpl implements JCL_facade {
 	private static final AtomicLong numOfTasks = new AtomicLong(0);
 	private static JCL_facade instance;	
 	private static JCL_facade instancePacu;
+
+	/** 3.0 begin **/
+	private JCL_result kafkaResult;
+	/** 3.0 end **/
+	
 	//End global variables
 	
 	protected JCL_FacadeImpl(boolean type, GenericResource<JCL_task> re){
@@ -65,7 +78,39 @@ public class JCL_FacadeImpl implements JCL_facade {
 			System.err.println("JCL facade constructor error");
 			e.printStackTrace();			
 		}
-		
+		/** 3.0 begin **/		
+//		Properties consumerProperties = new Properties();
+//		consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+//				"localhost:9092");
+//		consumerProperties.put(
+//			ConsumerConfig.CLIENT_ID_CONFIG, 
+//			"jcl-client");
+//		consumerProperties.put(
+//			ConsumerConfig.GROUP_ID_CONFIG, 
+//			"jcl-consumer-group");
+//		consumerProperties.put(
+//			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
+//			StringDeserializer.class.getName());
+//		consumerProperties.put(
+//			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
+//			StringDeserializer.class.getName());
+//		
+//		Consumer<String, String> kafkaConsumer = new KafkaConsumer<>(consumerProperties);
+//		
+//		try {
+//			kafkaConsumer.subscribe(
+//				Arrays.asList("jcl-output")
+//			);
+//			
+//		} catch(Throwable t) {
+//			System
+//				.err
+//				.println(t);
+//			kafkaConsumer.close();
+//		}
+//		
+//		ConsumerRecords<String, String> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
+		/** 3.0 end **/
 	}
 
 	public static Long createTicket(){
@@ -726,6 +771,23 @@ public class JCL_FacadeImpl implements JCL_facade {
 		
 		//Lock and get result
 		protected JCL_result getResultBlocking(Long ID) {
+			/** begin 3.0 **/
+//			JCL_result kafkaReturn = new JCL_resultImpl();
+//			
+//			try {
+//				synchronized (this.kafkaResult){
+//					if(this.kafkaResult == null) {
+//						System.out.println("protected JCL_result getResultBlocking(Long ID) wait()");
+//						this.kafkaResult.wait();
+//					}
+//				}
+//			} catch(Exception e) {
+//				kafkaReturn.setErrorResult(e);
+//			}	
+//			
+//			return (T) this.kafkaResult;
+			/** 3.0 end **/
+			
 			try{
 				//lock waiting result
 				join(ID);				

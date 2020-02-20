@@ -63,11 +63,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/** 3.0 begin **/
+import implementations.dm_kernel.SharedResourceThread;
+
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
+/** 3.0 end **/
 
 import javassist.ClassPool;
 import javassist.CtClass;
@@ -100,7 +104,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private static int delta;
 	private int port;
 
-	private Map<String, String> localMemory;
+	public Map<String, String> localMemory;
 	private Producer<String, String> kafkaProducer;
 
 	protected JCL_FacadeImpl(Properties properties){
@@ -122,7 +126,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		this.kafkaProducer = new KafkaProducer<>(producerProperties);
 		
-		this.localMemory = new HashMap<String, String>();
+		this.localMemory = new ConcurrentHashMap<String, String>();
 		/** 3.0 end **/
 		
 		try {
@@ -213,11 +217,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 						},0,5, TimeUnit.SECONDS);
 			}
 
-			//Start simple server
-//			if(DA){
-				simpleSever = new SimpleServer(this.port,devices,lock, this.localMemory);
-				simpleSever.start();				
-//			}
+//			simpleSever = new SimpleServer(
+//				this.port,
+//				devices,
+//				lock, 
+//				this.localMemory,
+//				this
+//			);
+//			simpleSever.start();
 
 			//getHosts using lambari
 			int type = 5;
@@ -429,24 +436,44 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public Future<JCL_result> execute(String objectNickname,Object... args) {
-		try {	
+		/** begin 3.0 **/
+//		JCL_result kafkaReturn = new JCL_resultImpl();
+//		
+//		try {
+//			synchronized (this.localMemory){
+//				if(!this.localMemory.containsKey(key)) {
+//					System.out.println("Lambari wait()");
+//					this.localMemory.wait();
+//				}
+//			}
+//			
+//			kafkaReturn.setCorrectResult(this.localMemory.get(key));
+//			
+//		} catch(Exception e) {
+//			kafkaReturn.setErrorResult(e);
+//		}	
+//		
+//		return kafkaReturn;
+		/** end 3.0 **/
+
+		System.out.println(1);
+		try {
 			if (!JPF){
+				System.out.println("if !JPF");
 				//Get host
 				String host = null,port = null,mac = null,portS=null;
-
-
+				
 				if (jars.containsKey(objectNickname)){
-					// Get host			
-
+					System.out.println("jars.containsKey(objectNickname)");
+					// Get host
 					Map<String, String> hostPort = RoundRobin.getDevice();
 
 					host = hostPort.get("IP");
 					port = hostPort.get("PORT");
 					mac = hostPort.get("MAC");
 					portS = hostPort.get("PORT_SUPER_PEER");
-
-				}else{
-
+					
+				} else {
 					Object[] argsLam = {serverAdd, String.valueOf(serverPort),null,null,objectNickname};
 					Future<JCL_result> ticket = jcl.execute("JCL_FacadeImplLamb", "registerByServer", argsLam);
 
@@ -464,7 +491,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					List<String> js = new ArrayList<String>();
 					js.add(host+port+mac+portS);
 					jarsSlaves.put(objectNickname,js);
-
 				}	    		  	    			    		  
 
 				//Test if host contain jar
@@ -472,16 +498,37 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					//Just exec					
 					Object[] argsLam = {objectNickname,host,port,mac,portS,new Boolean(true),args};
 					Future<JCL_result> ticket = super.execute("JCL_FacadeImplLamb", "execute", argsLam);
+					System.out.println("pipipi popopo");
+					
 					return ticket;
 				} else{
 					//Exec and register
-					Object[] argsLam = {objectNickname,host,port,mac,portS,jars.get(objectNickname),new Boolean(true),args};
+					Object[] argsLam = {
+						objectNickname,
+						host,
+						port,
+						mac,
+						portS,
+						jars.get(objectNickname),
+						new Boolean(true),
+						args
+					};
 					Future<JCL_result> ticket = super.execute("JCL_FacadeImplLamb", "executeAndRegister", argsLam);
-					//ticket.get();
+					
+					System.out.println("ticket" + ticket);
 					jarsSlaves.get(objectNickname).add(host+port+mac+portS);
+					System.out.println("popopo pipipi");
+
+					/** 3.0 begin **/
+
+					
+
+					/** 3.0 end **/
+					
 					return ticket;								
 				}
 			} else{
+				System.out.println("else" + JPF);
 				//watch this method
 				watchExecMeth = false;
 
@@ -518,7 +565,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 				//watch this method
 				watchExecMeth = true;
-				return new JCLFuture<JCL_result>(ticket);
+				
+				JCLFuture<JCL_result> lala = new JCLFuture<JCL_result>(ticket);
+				
+				System.out.println("lala -> " + lala);
+				return lala;
 			}
 		} catch (Exception e) {
 			System.err
@@ -532,6 +583,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public Future<JCL_result> execute(String objectNickname, String methodName,
 			Object... args) {		
 		try {
+			System.out.println(2);
 			if (!JPF){
 				//Get host
 				String host = null,port = null,mac = null, portS = null;
@@ -636,6 +688,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		List<Entry<String, String>> hosts;
 		List<Future<JCL_result>> tickets;
 		tickets = new ArrayList<Future<JCL_result>>();
+		System.out.println(11);
 		try {
 
 			//get all host
@@ -661,7 +714,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		List<Entry<String, String>> hosts;
 		List<Future<JCL_result>> tickets;
 		tickets = new ArrayList<Future<JCL_result>>();
-		try {						
+		try {
+			System.out.println(12);
 			//get all host
 			int[] d = {2,3,6,7};
 			hosts = this.getDevices(d);
@@ -686,7 +740,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		List<Future<JCL_result>> tickets;
 		tickets = new ArrayList<Future<JCL_result>>();
 		try {
-
+			System.out.println(14);
 			//get all host
 			int[] d = {2,3,6,7};
 			hosts = this.getDevices(d);
@@ -1170,7 +1224,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	@Override
-	public boolean instantiateGlobalVar(Object key, Object instance){
+	synchronized public boolean instantiateGlobalVar(Object key, Object instance){
 		
 		/** begin 3.0 **/
 		ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
@@ -1190,7 +1244,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 		
 		return true;
-		
 		/** end 3.0 **/
 	}
 
@@ -1619,16 +1672,33 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public JCL_result getValue(Object key) {
-
+		/** begin 3.0 **/
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
 		try {
-			kafkaReturn.setCorrectResult(this.localMemory.get(key));
+			if(!this.localMemory.containsKey(key)) {
+				SharedResourceThread consumerThread = new SharedResourceThread(
+						this.port,
+						this.localMemory
+					);
+				
+				consumerThread.start();
+				
+				consumerThread.join();
+				
+				consumerThread.end();
+			}
+			
+			kafkaReturn.setCorrectResult(
+				this.localMemory.get(key));
+			
 		} catch(Exception e) {
+			e.printStackTrace();
 			kafkaReturn.setErrorResult(e);
 		}
 		
 		return kafkaReturn;
+		/** end 3.0 **/
 	}
 
 	@Override

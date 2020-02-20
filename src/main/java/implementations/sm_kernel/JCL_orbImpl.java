@@ -44,16 +44,13 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	private Map<Long, T> results;
 
 	private URLClassLoader classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
-	//ClassLoader.getPlatformClassLoader();
 	
 	private JCL_orbImpl() {
-
 		nameMap = new ConcurrentHashMap<String, Class<?>>();
 		locks = new ConcurrentSkipListSet<Object>();
 		globalVars = new ConcurrentHashMap<Object, Object>();
 		cache1 = new ConcurrentHashMap<String, JCL_execute>();
 		cache2 = new ConcurrentHashMap<String, Integer>();
-		
 	}
 
 	@Override
@@ -69,7 +66,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 					para = 0;
 				else
 					para = task.getMethodParameters().length;
-
+					
 				int type = cache2.get(task.getObjectName() + ":" + task.getObjectMethod() + ":" + para);
 				task.setTaskTime(System.nanoTime());
 				Object result = instance.JCLExecPacu(type, task.getMethodParameters());
@@ -90,20 +87,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				}
 
 			} else {
-//				if (RegisterMsg.get() > 0){
-//				System.out.println("***********************************");
-//				System.out.println("*  Registering class in process   *");
-//				System.out.println("* Wait to receive all class data  *");
-//				System.out.println("* Work id: "+Thread.currentThread().getId()+"                     *");									
-//				System.out.println("***********************************");									
-//				}else{
-//					System.out.println("***************************************");
-//					System.out.println("*           Class not found           *");
-//					System.out.println("* Wait timeout or register class msg  *");
-//					System.out.println("* Work id: "+Thread.currentThread().getId()+"                         *");									
-//					System.out.println("***************************************");									
-//				}
-//				System.out.println("Finding Class in process.");
 				Long ini = System.currentTimeMillis();
 				boolean ok = true;
 
@@ -128,7 +111,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						task.setTaskTime(System.nanoTime());
 
 						jResult.setTime(task.getTaskTime());
-//						jResult.setMemorysize(ObjectSizeCalculator.getObjectSize(instance));
 						jResult.setMemorysize(10);
 
 
@@ -144,19 +126,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 						ok = false;
 						break;
-						/*
-						 * T jResult = results.get(task.getTaskID()); if
-						 * (task.getMethodParameters() == null) para = 0; else
-						 * para=task.getMethodParameters().length; Method m =
-						 * cache2.get(task.getObjectName()+":"+task.
-						 * getObjectMethod()+":"+para); Object instance =
-						 * cache1.get(task.getObjectName()); Object result =
-						 * m.invoke(instance, task.getMethodParameters());
-						 * if(result!=null){ jResult.setCorrectResult(result);
-						 * }else{ jResult.setCorrectResult("no result"); }
-						 * 
-						 * synchronized (jResult){ jResult.notifyAll(); } break;
-						 */
 					}
 				}
 								
@@ -166,7 +135,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 							+ nameMap.containsKey(task.getObjectName()));
 					T jResult = results.get(task.getTaskID());
 					jResult.setTime(task.getTaskTime());
-					// jResult.addTime(System.nanoTime());
 					jResult.setErrorResult(new Exception("No register class"));
 					synchronized (jResult) {
 						jResult.notifyAll();
@@ -177,7 +145,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 			System.err.println("Invalid argument. Method:" + task.getObjectMethod());
 			T jResult = results.get(task.getTaskID());
 			jResult.setTime(task.getTaskTime());
-			// jResult.addTime(System.nanoTime());
 			jResult.setErrorResult(el);
 
 			synchronized (jResult) {
@@ -190,7 +157,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 			en.printStackTrace();
 			T jResult = results.get(task.getTaskID());
 			jResult.setTime(task.getTaskTime());
-			// jResult.addTime(System.nanoTime());
 			jResult.setErrorResult(en);
 
 			synchronized (jResult) {
@@ -207,7 +173,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 			e.printStackTrace();
 			T jResult = results.get(task.getTaskID());
 			jResult.setTime(task.getTaskTime());
-			// jResult.addTime(System.nanoTime());
 			jResult.setErrorResult(e);
 
 			synchronized (jResult) {
@@ -225,12 +190,12 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				String mainComponentClass = serviceClass.getName();
 				ClassPool pool = ClassPool.getDefault();
 				pool.insertClassPath(new ClassClassPath(serviceClass));
-				// CtClass cc = pool.get(mainComponentClass);
 				CtClass cc = pool.getAndRename(mainComponentClass, mainComponentClass + idClass.getAndIncrement());
 				CtMethod[] ms = cc.getDeclaredMethods();
 				StringBuilder buffer = new StringBuilder();
 				buffer.append("public Object JCLExecPacu(int type,Object[] arg){");
 				buffer.append("switch(type) {");
+				
 				for (int i = 0; i < ms.length; i++) {
 					CtClass[] paType = ms[i].getParameterTypes();
 					cache2.put(nickName + ":" + ms[i].getName() + ":" + paType.length, i);
@@ -272,11 +237,11 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				cc.addInterface(ccInt);
 				CtMethod method = CtNewMethod.make(buffer.toString(), cc);
 				cc.addMethod(method);
-				// Loader cl = new Loader(pool);
-				// cl.loadClass("interfaces.kernel.JCL_execute");
+				
 				Class<? extends JCL_execute> cla = cc.toClass();
 				cache1.put(nickName, cla.newInstance());
 				nameMap.put(nickName, cla);
+				
 				return true;
 			}
 
@@ -290,37 +255,16 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 	@Override
 	public synchronized boolean register(CtClass cc, String nickName) {
-		// try{
-
-		/*
-		 * if(nameMap.containsKey(nickName)){ return false; }else{ Method[] ms =
-		 * serviceClass.getMethods(); for(int i = 0; i<ms.length ; i++){
-		 * cache2.put(nickName+":"+ms[i].getName()+":"+ms[i].getParameterTypes()
-		 * .length, i); cache1.put(nickName, serviceClass.newInstance()); }
-		 * nameMap.put(nickName, serviceClass);
-		 * 
-		 * return true; }
-		 */
-		/*
-		 * } catch (Exception e){ System.err.println(
-		 * "problem in JCL orb register(Class<?> serviceClass, String nickName)"
-		 * ); e.printStackTrace(); return false; }
-		 */
 		try {
 			if (nameMap.containsKey(nickName)) {
 				return false;
 			} else {
-				// String mainComponentClass = serviceClass.getName();
 				ClassPool pool = ClassPool.getDefault();
-				// pool.appendClassPath(new
-				// LoaderClassPath(serviceClass.getClassLoader()));
-				// CtClass cc = pool.get(mainComponentClass);
-				// CtClass cc =
-				// pool.getAndRename(mainComponentClass,mainComponentClass+idClass.getAndIncrement());
 				CtMethod[] ms = cc.getDeclaredMethods();
 				StringBuilder buffer = new StringBuilder();
 				buffer.append("public Object JCLExecPacu(int type,Object[] arg){");
 				buffer.append("switch(type) {");
+				
 				for (int i = 0; i < ms.length; i++) {
 					CtClass[] paType = ms[i].getParameterTypes();
 					cache2.put(nickName + ":" + ms[i].getName() + ":" + paType.length, i);
@@ -365,8 +309,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				cc.addInterface(ccInt);
 				CtMethod method = CtNewMethod.make(buffer.toString(), cc);
 				cc.addMethod(method);
-				// Loader cl = new Loader(pool);
-				// cl.loadClass("interfaces.kernel.JCL_execute");
+				
 				Class<? extends JCL_execute> cla = cc.toClass();
 				cache1.put(nickName, cla.newInstance());
 				nameMap.put(nickName, cla);
@@ -435,8 +378,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				cc.addInterface(ccInt);
 				CtMethod method = CtNewMethod.make(buffer.toString(), cc);
 				cc.addMethod(method);
-				// cc.replaceClassName(cc.getName(),
-				// cc.getName()+idClass.getAndIncrement());
+				
 				Class<? extends JCL_execute> cla = cc.toClass();
 				cache1.put(nickName, cla.newInstance());
 				nameMap.put(nickName, cla);
@@ -496,7 +438,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 	@Override
 	public synchronized boolean instantiateGlobalVar(Object key, Object instance) {
-		// TODO Auto-generated method stub
 		try {
 			if (instance == null) {
 				return false;
@@ -518,8 +459,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	@Override
 	public synchronized boolean instantiateGlobalVar(Object key, String nickName, File[] jars,
 			Object[] defaultVarValue) {
-		// TODO Auto-generated method stub
-
 		try {
 
 			if (globalVars.containsKey(key)) {
@@ -573,14 +512,10 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 	@Override
 	public synchronized boolean instantiateGlobalVar(Object key, String nickName, Object[] defaultVarValue) {
-		// TODO Auto-generated method stub
-
 		try {
-
 			if (globalVars.containsKey(key)) {
 				return false;
 			} else {
-
 				if (defaultVarValue == null) {
 					Object var = Class.forName(nickName).newInstance();
 					globalVars.put(key, var);
@@ -624,57 +559,24 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 		}
 	}
 
-//	@Override
-//	public boolean setValue(Object key, Object value) {
-//		// TODO Auto-generated method stub
-//
-//		try {
-//			if (globalVars.containsKey(key)) {
-//				// no wait and notify
-//				if (locks.contains(key)) {
-//					return false;
-//				} else {
-//					globalVars.put(key, value);
-//					return true;
-//				}
-//			} else {
-//				return false;
-//			}
-//
-//		} catch (Exception e) {
-//			System.err.println("problem in JCL orb setValue(String varName, Object value)");
-//
-//			return false;
-//		}
-//	}
-
 	@Override
 	public Object getValue(Object key) {
 		try {
 			Object obj = globalVars.get(key);
 			if (obj == null) {
-//				JCL_result jclr = new JCL_resultImpl();
-//				jclr.setCorrectResult("No value found!");
-//				return jclr;
 				return new String("No value found!");
 			} else {
-//				JCL_result jclr = new JCL_resultImpl();
-//				jclr.setCorrectResult(obj);
-//				return jclr;
 				return obj;
 			}
 		} catch (Exception e) {
 			System.err.println("problem in JCL orb getValue(String varName)");
 
-//			JCL_result jclr = new JCL_resultImpl();
-//			jclr.setErrorResult(e);
 			return e.getMessage();
 		}
 	}
 
 	@Override
 	public Object getValueLocking(Object key) {
-		// TODO Auto-generated method stub
 		try {
 			Object obj = globalVars.get(key);
 			if (obj != null) {
@@ -682,47 +584,31 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 					// no wait and notify
 					if (locks.contains(key))
 						return null;
-					
-//					JCL_result jclr = new JCL_resultImpl();
-//					jclr.setCorrectResult(globalVars.get(key));
 
 					locks.add(key);
 					return obj;
-					
-//					return jclr;
 				}
-
 			} else {
-
 				return new String("No value found!");
-//				JCL_result jclr = new JCL_resultImpl();
-//				jclr.setCorrectResult("No value found!");
-//
-//				return jclr;
 			}
 		} catch (Exception e) {
 			System.err.println("problem in JCL orb getValueLocking(String varName)");
 
-//			JCL_result jclr = new JCL_resultImpl();
-//			jclr.setErrorResult(e);
 			return e.getMessage();
 		}
 	}
 
 	@Override
 	public boolean setValueUnlocking(Object key, Object value) {
-		// TODO Auto-generated method stub
 		try {
 			if (globalVars.containsKey(key)) {
 				globalVars.put(key, value);
 				locks.remove(key);
 
 				return true;
-
 			} else {
 				return false;
 			}
-
 		} catch (Exception e) {
 			System.err.println("problem in JCL orb setValueUnlocking(String varName)");
 
@@ -731,23 +617,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 	}
 
-	/*
-	 * @Override public boolean register(File[] f, String classToBeExecuted) {
-	 * try{
-	 * 
-	 * if(containsTask(classToBeExecuted)){ return true; }else { Class<?> c=
-	 * registerJar(f, classToBeExecuted); synchronized (c) { if(c!=null){ return
-	 * register(c, classToBeExecuted); }else { System.err.println(
-	 * " not registered"); return false; } }
-	 * 
-	 * }
-	 * 
-	 * }catch(Exception e){
-	 * 
-	 * System.err.println(
-	 * "problem in JCL orb register(File f, String classToBeExecuted)");
-	 * e.printStackTrace(); return false; } }
-	 */
 	private void addURL(URL url) throws Exception {
 
 		Class<URLClassLoader> clazz = URLClassLoader.class;
@@ -760,11 +629,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 	public boolean register(File[] fs, String classToBeExecuted) {
 		try {
-
-			// if(!new File("../user_jars/").isDirectory()){
-			// new File("../user_jars/").mkdir();
-			// }
-
 			for (File f : fs) {
 				this.addURL((f.toURI().toURL()));
 			}
@@ -784,7 +648,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 			return false;
 		} catch (Exception e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 			return false;
 		}
@@ -812,7 +675,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 	@Override
 	public boolean lockGlobalVar(Object key) {
-		// TODO Auto-generated method stub
 		try {
 			if (globalVars.containsKey(key)) {
 				if (locks.contains(key)) {

@@ -10,21 +10,18 @@ public class JCLFuture<T> extends implementations.sm_kernel.JCL_FacadeImpl.Holde
     
 	private final Long ticket;
 	private boolean cancel = false;
-
-	
 	
     public JCLFuture(Long ticket) {
-		// TODO Auto-generated constructor stub
 		this.ticket = ticket;
 	}
 
+    
     public Long getTicket() {
 		return ticket;
 	}
     
 	@Override
 	public boolean cancel(boolean mayInterruptIfRunning) {
-		// TODO Auto-generated method stub		
 		try {
 			JCL_result jresult = super.getResultBlocking(ticket);
 //			JCL_result jresult = jcl.getResultUnblocking(ticket);
@@ -46,13 +43,13 @@ public class JCLFuture<T> extends implementations.sm_kernel.JCL_FacadeImpl.Holde
 
 	@Override
 	public T get() throws InterruptedException, ExecutionException {
-		// TODO Auto-generated method stub
-		if(cancel)return null;
-		JCL_result jresult = super.getResultBlocking(ticket);		
-//		JCL_result jresult = jcl.getResultBlocking(ticket);
+		if(this.cancel) {
+			return null;
+		}
 		
-//		return (T)jresult.getCorrectResult();
-	    return (T)jresult;
+		JCL_result jresult = super.getResultBlocking(ticket);
+	    
+	    return (T) jresult;
 	}
 
 	@Override
