@@ -30,13 +30,11 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.UnknownHostException;
-import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -58,7 +56,6 @@ import org.apache.kafka.streams.kstream.KStream;
 import commom.GenericConsumer;
 import commom.GenericResource;
 import commom.JCL_handler;
-
 
 public class MainHost extends Server{
 	private String hostPort;
@@ -238,14 +235,14 @@ public class MainHost extends Server{
 					Serdes.String().getClass());
 				streamProperties.put(
 					StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, 
-					Serdes.String().getClass());
+					Serdes.ByteArray().getClass());
 
 				final StreamsBuilder builder = new StreamsBuilder();
 				
-				KStream<String, String> source = builder.<String, String>stream("jcl-input");
+				KStream<String, byte[]> source = builder.<String, byte[]>stream("jcl-input");
 				
-				source.foreach(new ForeachAction<String, String>() {
-				    public void apply(String key, String value) {
+				source.foreach(new ForeachAction<String, byte[]>() {
+				    public void apply(String key, byte[] value) {
 				        System.out.println("received " + key + ": " + value);
 				    }
 				 });

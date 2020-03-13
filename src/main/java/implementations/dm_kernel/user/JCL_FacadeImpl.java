@@ -16,6 +16,7 @@ import implementations.util.ObjectWrap;
 import implementations.util.ServerDiscovery;
 import implementations.util.XORShiftRandom;
 import implementations.util.IoT.CryptographyUtils;
+import implementations.dm_kernel.KafkaMessageSerializer;
 import interfaces.kernel.JCL_connector;
 import interfaces.kernel.JCL_facade;
 import interfaces.kernel.JCL_message;
@@ -48,6 +49,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -70,6 +72,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 /** 3.0 end **/
 
@@ -103,10 +106,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public static int serverPort,serverSPort;
 	private static int delta;
 	private int port;
-
-	public Map<String, String> localMemory;
-	private Producer<String, String> kafkaProducer;
-
+	/** 3.0 begin **/
+	public Map<String, byte[]> localMemory;
+	private Producer<String, byte[]> kafkaProducer;
+	/** 3.0 end **/
 	protected JCL_FacadeImpl(Properties properties){
 		
 		/** 3.0 begin **/
@@ -122,11 +125,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			StringSerializer.class.getName());
 		producerProperties.put(
 			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
-			StringSerializer.class.getName());
+			ByteArraySerializer.class.getName());
 		
 		this.kafkaProducer = new KafkaProducer<>(producerProperties);
 		
-		this.localMemory = new ConcurrentHashMap<String, String>();
+		this.localMemory = new ConcurrentHashMap<String, byte[]>();
 		/** 3.0 end **/
 		
 		try {
@@ -381,7 +384,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			Object[] argsLam = {serverAdd, String.valueOf(serverPort),null,"0",msg};
 			Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "register", argsLam);
 
-			if(((Boolean)t.get().getCorrectResult()).booleanValue()){
+			if(((Boolean) t.get().getCorrectResult()).booleanValue()){
 				jars.put(classToBeExecuted, msg);
 				jarsSlaves.put(classToBeExecuted, new ArrayList<String>());	
 
@@ -436,35 +439,16 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public Future<JCL_result> execute(String objectNickname,Object... args) {
-		/** begin 3.0 **/
-//		JCL_result kafkaReturn = new JCL_resultImpl();
-//		
-//		try {
-//			synchronized (this.localMemory){
-//				if(!this.localMemory.containsKey(key)) {
-//					System.out.println("Lambari wait()");
-//					this.localMemory.wait();
-//				}
-//			}
-//			
-//			kafkaReturn.setCorrectResult(this.localMemory.get(key));
-//			
-//		} catch(Exception e) {
-//			kafkaReturn.setErrorResult(e);
-//		}	
-//		
-//		return kafkaReturn;
-		/** end 3.0 **/
 
-		System.out.println(1);
+//		System.out.println(1);
 		try {
 			if (!JPF){
-				System.out.println("if !JPF");
+//				System.out.println("if !JPF");
 				//Get host
 				String host = null,port = null,mac = null,portS=null;
 				
 				if (jars.containsKey(objectNickname)){
-					System.out.println("jars.containsKey(objectNickname)");
+//					System.out.println("jars.containsKey(objectNickname)");
 					// Get host
 					Map<String, String> hostPort = RoundRobin.getDevice();
 
@@ -474,7 +458,13 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					portS = hostPort.get("PORT_SUPER_PEER");
 					
 				} else {
-					Object[] argsLam = {serverAdd, String.valueOf(serverPort),null,null,objectNickname};
+					Object[] argsLam = {
+						serverAdd, 
+						String.valueOf(serverPort),
+						null,
+						null,
+						objectNickname
+					};
 					Future<JCL_result> ticket = jcl.execute("JCL_FacadeImplLamb", "registerByServer", argsLam);
 
 					Map<String, String> hostPort = (Map<String, String>) ticket.get().getCorrectResult();
@@ -498,7 +488,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					//Just exec					
 					Object[] argsLam = {objectNickname,host,port,mac,portS,new Boolean(true),args};
 					Future<JCL_result> ticket = super.execute("JCL_FacadeImplLamb", "execute", argsLam);
-					System.out.println("pipipi popopo");
 					
 					return ticket;
 				} else{
@@ -515,15 +504,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					};
 					Future<JCL_result> ticket = super.execute("JCL_FacadeImplLamb", "executeAndRegister", argsLam);
 					
-					System.out.println("ticket" + ticket);
 					jarsSlaves.get(objectNickname).add(host+port+mac+portS);
-					System.out.println("popopo pipipi");
-
-					/** 3.0 begin **/
-
-					
-
-					/** 3.0 end **/
 					
 					return ticket;								
 				}
@@ -583,7 +564,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public Future<JCL_result> execute(String objectNickname, String methodName,
 			Object... args) {		
 		try {
-			System.out.println(2);
+//			System.out.println(2);
 			if (!JPF){
 				//Get host
 				String host = null,port = null,mac = null, portS = null;
@@ -1225,12 +1206,13 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	synchronized public boolean instantiateGlobalVar(Object key, Object instance){
-		
+		KafkaMessageSerializer serializer = new KafkaMessageSerializer();
 		/** begin 3.0 **/
-		ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
+		System.out.println("EEEEEEEEEEEEEEEEEEEEEE");
+		ProducerRecord<String, byte[]> producedRecord = new ProducerRecord<>(
 			"jcl-input", 
 			key.toString(),
-            instance.toString()
+            serializer.serialize(instance)
         );
 		
 		try {
@@ -1677,10 +1659,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		try {
 			if(!this.localMemory.containsKey(key)) {
-				SharedResourceThread consumerThread = new SharedResourceThread(
-						this.port,
-						this.localMemory
-					);
+				SharedResourceThread<String, byte[]> consumerThread = new SharedResourceThread<String, byte[]>(
+					this.port,
+					this.localMemory
+				);
 				
 				consumerThread.start();
 				
@@ -1689,8 +1671,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				consumerThread.end();
 			}
 			
+			KafkaMessageSerializer serializer = new KafkaMessageSerializer();
+			
 			kafkaReturn.setCorrectResult(
-				this.localMemory.get(key));
+				serializer.deserialize(
+					this.localMemory.get(
+						key
+					))
+				);
 			
 		} catch(Exception e) {
 			e.printStackTrace();
@@ -2512,9 +2500,26 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				//Using lambari to get result
 
 				result = super.getResultBlocking(ID);
-				Object[] res = (Object[])result.getCorrectResult();
-				Object[] arg = {(ID),res[0],res[1],res[2],res[3],res[4]};
-				Future<JCL_result> ticket = jcl.execute("JCL_FacadeImplLamb", "getResultBlocking", arg);				
+				System.out.println("result.getCorrectResult() -> ");
+				System.out.println(result.getCorrectResult().getClass().getName());
+				System.out.println(result.getCorrectResult());
+				Object[] res = (Object[]) result.getCorrectResult();
+				
+				Object[] arg = {
+					ID,
+					res[0],
+					res[1],
+					res[2],
+					res[3],
+					res[4]
+				};
+				
+				Future<JCL_result> ticket = jcl.execute(
+					"JCL_FacadeImplLamb", 
+					"getResultBlocking", 
+					arg
+				);				
+				
 				resultF = ticket.get();
 
 				return resultF;
@@ -2522,8 +2527,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			} catch (Exception e) {
 				System.err
 				.println("problem in JCL facade getResultBlocking(String ID)");
+				e.printStackTrace();
+				
 				JCL_result jclr = new JCL_resultImpl();
-				jclr.setErrorResult(e);			
+				jclr.setErrorResult(e);
+				
 				return jclr;
 			}
 		}

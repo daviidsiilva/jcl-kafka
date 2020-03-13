@@ -11,6 +11,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.Enumeration;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,15 +20,23 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+
 import com.google.common.primitives.Primitives;
+
+import implementations.dm_kernel.KafkaMessageSerializer;
 import javassist.ClassClassPath;
 import javassist.ClassPool;
 import javassist.CtClass;
 import javassist.CtMethod;
 import javassist.CtNewMethod;
 import javassist.CtPrimitiveType;
-//import jdk.nashorn.internal.ir.debug.ObjectSizeCalculator;
-import commom.JCL_resultImpl;
 
 public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
@@ -42,7 +51,10 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	private static JCL_orb instance;
 	private static JCL_orb instancePacu;
 	private Map<Long, T> results;
-
+	/** 3.0 begin **/
+	private Producer<String, byte[]> kafkaProducer;
+	/** 3.0 end **/
+	
 	private URLClassLoader classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
 	
 	private JCL_orbImpl() {
@@ -51,6 +63,24 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 		globalVars = new ConcurrentHashMap<Object, Object>();
 		cache1 = new ConcurrentHashMap<String, JCL_execute>();
 		cache2 = new ConcurrentHashMap<String, Integer>();
+		
+		/** 3.0 begin **/
+		Properties producerProperties = new Properties();
+		producerProperties.put(
+			ProducerConfig.CLIENT_ID_CONFIG, 
+			"jcl-client");
+		producerProperties.put(
+			ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+			"localhost" + ":" + "9092");
+		producerProperties.put(
+			ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, 
+			StringSerializer.class.getName());
+		producerProperties.put(
+			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
+			ByteArraySerializer.class.getName());
+		
+		this.kafkaProducer = new KafkaProducer<>(producerProperties);
+		/** 3.0 end **/
 	}
 
 	@Override
@@ -75,13 +105,33 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				jResult.setTime(task.getTaskTime());
 //				jResult.setMemorysize(ObjectSizeCalculator.getObjectSize(instance));
 				jResult.setMemorysize(10);
-
+				System.out.println("JCL_orbImpl 108");
 				if (result != null) {
 					jResult.setCorrectResult(result);
 				} else {
 					jResult.setCorrectResult("no result");
 				}
 
+				/** begin 3.0 **/
+				Long ID = new Long(task.getTaskID());
+				KafkaMessageSerializer serializer = new KafkaMessageSerializer();
+				
+				ProducerRecord<String, byte[]> producedRecord = new ProducerRecord<>(
+					"jcl-input", 
+					ID.toString(),
+					serializer.serialize(result)
+				);
+				
+				try {
+					this.kafkaProducer.send(producedRecord).get();
+					
+				} catch(Throwable t) {
+					System
+					.err
+					.println(t);
+				}
+				/** end 3.0 **/
+				
 				synchronized (jResult) {
 					jResult.notifyAll();
 				}
@@ -112,13 +162,32 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 						jResult.setTime(task.getTaskTime());
 						jResult.setMemorysize(10);
-
-
+						System.out.println("QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ");
 						if (result != null) {
 							jResult.setCorrectResult(result);
 						} else {
 							jResult.setCorrectResult("no result");
 						}
+
+						/** begin 3.0 **/
+//						Long ID = new Long(task.getTaskID());
+//						KafkaMessageSerializer serializer = new KafkaMessageSerializer();
+//						
+//						ProducerRecord<String, byte[]> producedRecord = new ProducerRecord<>(
+//							"jcl-input", 
+//							ID.toString(),
+//							serializer.serialize(result)
+//						);
+//						
+//						try {
+//							this.kafkaProducer.send(producedRecord).get();
+//							
+//						} catch(Throwable t) {
+//							System
+//							.err
+//							.println(t);
+//						}
+						/** end 3.0 **/
 
 						synchronized (jResult) {
 							jResult.notifyAll();

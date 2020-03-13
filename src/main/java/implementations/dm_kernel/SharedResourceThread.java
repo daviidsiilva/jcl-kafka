@@ -14,19 +14,19 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
-public class SharedResourceThread extends Thread{
+public class SharedResourceThread<T1, T2> extends Thread{
 	
 	protected final int port;	
 	protected final Selector selector;
 	protected final ServerSocketChannel serverSocket;
 	/** 3.0 begin **/
-	private Map<String, String> localMemory;
-	private Object facade;
+	private Map<String, byte[]> localMemory;
 	/** 3.0 end **/
 	
-	public SharedResourceThread(int port, Map<String, String> localMemory) throws IOException{
+	public SharedResourceThread(int port, Map<String, byte[]> localMemory) throws IOException{
 		this.port = 4952;
 		this.selector = Selector.open();
 		this.serverSocket = ServerSocketChannel.open();
@@ -46,7 +46,7 @@ public class SharedResourceThread extends Thread{
 				
 	public void run(){
 		openServerSocket();
-		
+
 		/** 3.0 begin **/		
 		Properties consumerProperties = new Properties();
 		consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
@@ -62,9 +62,9 @@ public class SharedResourceThread extends Thread{
 			StringDeserializer.class.getName());
 		consumerProperties.put(
 			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
-			StringDeserializer.class.getName());
+			ByteArrayDeserializer.class.getName());
 		
-		Consumer<String, String> kafkaConsumer = new KafkaConsumer<>(consumerProperties);
+		Consumer<String, byte[]> kafkaConsumer = new KafkaConsumer<>(consumerProperties);
 		
 		try {
 			kafkaConsumer.subscribe(
@@ -78,7 +78,7 @@ public class SharedResourceThread extends Thread{
 			kafkaConsumer.close();
 		}
 		
-		ConsumerRecords<String, String> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
+		ConsumerRecords<String, byte[]> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
 		/** 3.0 end **/
 		
 		try {

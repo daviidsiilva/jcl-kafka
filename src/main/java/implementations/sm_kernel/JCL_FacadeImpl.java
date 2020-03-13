@@ -3,6 +3,8 @@ package implementations.sm_kernel;
 import implementations.collections.JCLFuture;
 import implementations.collections.JCLPFuture;
 import implementations.collections.JCLSFuture;
+import implementations.dm_kernel.KafkaMessageSerializer;
+import implementations.dm_kernel.SharedResourceThread;
 import implementations.util.CoresAutodetect;
 import interfaces.kernel.JCL_facade;
 import interfaces.kernel.JCL_orb;
@@ -32,6 +34,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
 import commom.Constants;
@@ -52,10 +55,6 @@ public class JCL_FacadeImpl implements JCL_facade {
 	private static final AtomicLong numOfTasks = new AtomicLong(0);
 	private static JCL_facade instance;	
 	private static JCL_facade instancePacu;
-
-	/** 3.0 begin **/
-	private JCL_result kafkaResult;
-	/** 3.0 end **/
 	
 	//End global variables
 	
@@ -78,39 +77,6 @@ public class JCL_FacadeImpl implements JCL_facade {
 			System.err.println("JCL facade constructor error");
 			e.printStackTrace();			
 		}
-		/** 3.0 begin **/		
-//		Properties consumerProperties = new Properties();
-//		consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-//				"localhost:9092");
-//		consumerProperties.put(
-//			ConsumerConfig.CLIENT_ID_CONFIG, 
-//			"jcl-client");
-//		consumerProperties.put(
-//			ConsumerConfig.GROUP_ID_CONFIG, 
-//			"jcl-consumer-group");
-//		consumerProperties.put(
-//			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
-//			StringDeserializer.class.getName());
-//		consumerProperties.put(
-//			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
-//			StringDeserializer.class.getName());
-//		
-//		Consumer<String, String> kafkaConsumer = new KafkaConsumer<>(consumerProperties);
-//		
-//		try {
-//			kafkaConsumer.subscribe(
-//				Arrays.asList("jcl-output")
-//			);
-//			
-//		} catch(Throwable t) {
-//			System
-//				.err
-//				.println(t);
-//			kafkaConsumer.close();
-//		}
-//		
-//		ConsumerRecords<String, String> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
-		/** 3.0 end **/
 	}
 
 	public static Long createTicket(){
@@ -760,46 +726,75 @@ public class JCL_FacadeImpl implements JCL_facade {
 		
 		private static GenericResource<JCL_task> resource;
 		
-//		public Holder(){
-//			synchronized(this){
-//			if (instance == null){
-//				resource = new GenericResource<JCL_task>();
-//				instance = new JCL_FacadeImpl(false, resource);
-//			}
-//		 }
-//		}
+		public Holder(){ }
 		
 		//Lock and get result
 		protected JCL_result getResultBlocking(Long ID) {
 			/** begin 3.0 **/
-//			JCL_result kafkaReturn = new JCL_resultImpl();
-//			
-//			try {
-//				synchronized (this.kafkaResult){
-//					if(this.kafkaResult == null) {
-//						System.out.println("protected JCL_result getResultBlocking(Long ID) wait()");
-//						this.kafkaResult.wait();
-//					}
-//				}
-//			} catch(Exception e) {
-//				kafkaReturn.setErrorResult(e);
-//			}	
-//			
-//			return (T) this.kafkaResult;
-			/** 3.0 end **/
+			JCL_result kafkaReturn = new JCL_resultImpl();
 			
-			try{
-				//lock waiting result
-				join(ID);				
-				return results.get(ID);
+			
+			try {				
+				join(ID);
+
+				ConcurrentHashMap<String, byte[]> auxiliarMap = new ConcurrentHashMap<String, byte[]>(); 
+
+				while(!auxiliarMap.contains(ID)) {
+					SharedResourceThread<Long, byte[]> consumerThread = new SharedResourceThread<Long, byte[]>(
+						4580,
+						auxiliarMap
+					);
+
+					consumerThread.start();
+
+					consumerThread.join();
+
+					consumerThread.end();
+				}
 				
-			}catch (Exception e){
-				System.err.println("problem in JCL facade getResultBlocking(Long ID)");
-				JCL_result jclr = new JCL_resultImpl();
-				jclr.setErrorResult(e);
+				
+				System.out.println("auxiliarMap");
+				System.out.println(auxiliarMap);
+//				
+//				if(!results.containsKey(ID) && 
+//							!auxiliarMap.containsKey(ID.toString())) {
+//					this.getResultBlocking(ID);
+//					
+//				} else {
+//					KafkaMessageSerializer serializer = new KafkaMessageSerializer();
+//					System.out.println("ID -> ");
+//					System.out.println(ID);
+//					
+//					System.out.println("auxiliarMap -> ");
+//					System.out.println(auxiliarMap);
+//					
+//					System.out.println("results -> ");
+//					System.out.println(results);
+//					
+//					if(auxiliarMap.get(ID.toString()) != null) {
+//						kafkaReturn.setCorrectResult(
+//								serializer.deserialize(
+//									auxiliarMap.get(
+//										ID.toString()
+//									)));
+//					} else {
+//						kafkaReturn.setCorrectResult(
+//							results.get(ID));
+//					}
+//					
+//				}
+			} catch(Exception e) {
+				System.err
+					.println("problem in JCL facade getResultBlocking(Long ID)");
 				e.printStackTrace();
-				return jclr;
+				kafkaReturn.setErrorResult(e);
+				
+				return kafkaReturn;
 			}
+			
+			return results.get(ID);
+//			return kafkaReturn;
+			/** end 3.0 **/
 		}
 		
 		//Get result
@@ -862,6 +857,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 						//Necessary with use Lambari in parallel (racing condition)
 						if((jclr.getCorrectResult()==null)&&(jclr.getErrorResult()==null)){
 						jclr.wait();
+						System.err.println("jclr.wait()");
 						}
 					}				
 					join(ID);
