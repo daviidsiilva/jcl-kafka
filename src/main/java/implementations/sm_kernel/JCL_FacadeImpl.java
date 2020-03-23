@@ -4,6 +4,7 @@ import implementations.collections.JCLFuture;
 import implementations.collections.JCLPFuture;
 import implementations.collections.JCLSFuture;
 import implementations.dm_kernel.KafkaMessageSerializer;
+import implementations.dm_kernel.SharedJCLResultsThread;
 import implementations.dm_kernel.SharedResourceThread;
 import implementations.util.CoresAutodetect;
 import interfaces.kernel.JCL_facade;
@@ -736,64 +737,16 @@ public class JCL_FacadeImpl implements JCL_facade {
 			
 			try {				
 				join(ID);
-
-				ConcurrentHashMap<String, byte[]> auxiliarMap = new ConcurrentHashMap<String, byte[]>(); 
-
-				while(!auxiliarMap.contains(ID)) {
-					SharedResourceThread<Long, byte[]> consumerThread = new SharedResourceThread<Long, byte[]>(
-						4580,
-						auxiliarMap
-					);
-
-					consumerThread.start();
-
-					consumerThread.join();
-
-					consumerThread.end();
-				}
 				
-				
-				System.out.println("auxiliarMap");
-				System.out.println(auxiliarMap);
-//				
-//				if(!results.containsKey(ID) && 
-//							!auxiliarMap.containsKey(ID.toString())) {
-//					this.getResultBlocking(ID);
-//					
-//				} else {
-//					KafkaMessageSerializer serializer = new KafkaMessageSerializer();
-//					System.out.println("ID -> ");
-//					System.out.println(ID);
-//					
-//					System.out.println("auxiliarMap -> ");
-//					System.out.println(auxiliarMap);
-//					
-//					System.out.println("results -> ");
-//					System.out.println(results);
-//					
-//					if(auxiliarMap.get(ID.toString()) != null) {
-//						kafkaReturn.setCorrectResult(
-//								serializer.deserialize(
-//									auxiliarMap.get(
-//										ID.toString()
-//									)));
-//					} else {
-//						kafkaReturn.setCorrectResult(
-//							results.get(ID));
-//					}
-//					
-//				}
+				kafkaReturn = results.get(ID);
 			} catch(Exception e) {
 				System.err
 					.println("problem in JCL facade getResultBlocking(Long ID)");
 				e.printStackTrace();
 				kafkaReturn.setErrorResult(e);
-				
-				return kafkaReturn;
 			}
 			
-			return results.get(ID);
-//			return kafkaReturn;
+			return kafkaReturn;
 			/** end 3.0 **/
 		}
 		
@@ -850,7 +803,19 @@ public class JCL_FacadeImpl implements JCL_facade {
 		
 		//Wait
 		private void join(long ID) {
-			try{
+			try {
+				/** begin 3.0 **/
+				SharedJCLResultsThread consumerThread = new SharedJCLResultsThread(
+					4580,
+					results
+				);
+
+				consumerThread.start();
+
+				consumerThread.join();
+
+				consumerThread.end();
+				/** end 3.0 **/
 				JCL_result jclr = results.get(ID);
 				if((jclr.getCorrectResult()==null)&&(jclr.getErrorResult()==null)){				
 					synchronized (jclr){
@@ -859,7 +824,8 @@ public class JCL_FacadeImpl implements JCL_facade {
 						jclr.wait();
 						System.err.println("jclr.wait()");
 						}
-					}				
+					}	
+					
 					join(ID);
 				}
 			}catch (Exception e){

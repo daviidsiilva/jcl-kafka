@@ -1206,9 +1206,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	synchronized public boolean instantiateGlobalVar(Object key, Object instance){
-		KafkaMessageSerializer serializer = new KafkaMessageSerializer();
 		/** begin 3.0 **/
-		System.out.println("EEEEEEEEEEEEEEEEEEEEEE");
+		KafkaMessageSerializer serializer = new KafkaMessageSerializer();
+		
 		ProducerRecord<String, byte[]> producedRecord = new ProducerRecord<>(
 			"jcl-input", 
 			key.toString(),
@@ -1216,7 +1216,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
         );
 		
 		try {
-			this.kafkaProducer.send(producedRecord).get();
+			this.kafkaProducer.send(producedRecord);
 		} catch(Throwable t) {
 			System
 				.err
