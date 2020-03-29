@@ -78,16 +78,14 @@ public class SharedResourceThread<T1, T2> extends Thread{
 			kafkaConsumer.close();
 		}
 		
-		ConsumerRecords<String, byte[]> consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));
-		/** 3.0 end **/
+		ConsumerRecords<String, byte[]> consumedRecords = kafkaConsumer.poll(Duration.ofMillis(150));
 		
 		try {
-        	/** 3.0 begin **/
         	synchronized(this.localMemory) {
         		consumedRecords.forEach(
     				(record) -> {
     					this.localMemory.put(record.key(), record.value());
-    					System.out.println("put " + record.key() + ": " + record.value());
+    					System.out.println("jcl-output = { " + record.key() + ": " + record.value() + " }");
     				}
 				);
         	}

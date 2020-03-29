@@ -1199,7 +1199,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			.println("problem in JCL facade instantiateGlobalVar(Object key, String nickName,File[] jars, Object[] defaultVarValue)");
 			e.printStackTrace();
 			return false;
-		}finally {
+		} finally {
 			lock.readLock().unlock();
 		}
 	}

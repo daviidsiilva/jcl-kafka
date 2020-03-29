@@ -243,7 +243,7 @@ public class MainHost extends Server{
 				
 				source.foreach(new ForeachAction<String, byte[]>() {
 				    public void apply(String key, byte[] value) {
-				        System.out.println("received " + key + ": " + value);
+				        System.out.println("jcl-input = { " + key + ": " + value + " }");
 				    }
 				 });
 				
