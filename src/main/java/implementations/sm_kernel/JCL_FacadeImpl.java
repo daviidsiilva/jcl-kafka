@@ -3,9 +3,7 @@ package implementations.sm_kernel;
 import implementations.collections.JCLFuture;
 import implementations.collections.JCLPFuture;
 import implementations.collections.JCLSFuture;
-import implementations.dm_kernel.KafkaMessageSerializer;
-import implementations.dm_kernel.SharedJCLResultsThread;
-import implementations.dm_kernel.SharedResourceThread;
+import implementations.dm_kernel.SharedResourceConsumerThread;
 import implementations.util.CoresAutodetect;
 import interfaces.kernel.JCL_facade;
 import interfaces.kernel.JCL_orb;
@@ -14,9 +12,7 @@ import interfaces.kernel.JCL_task;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.List;
@@ -30,13 +26,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.common.serialization.StringDeserializer;
 
 import commom.Constants;
 import commom.GenericConsumer;
@@ -123,6 +112,9 @@ public class JCL_FacadeImpl implements JCL_facade {
 	}
 	
 	public Future<JCL_result> execute(Long ticket, String className, String methodName, Object... args) {
+		System.out.print("131 ");
+		System.out.print("methodName -> ");
+		System.out.println(methodName);
 		try{
 			//create task			
 			JCL_task t = new JCL_taskImpl(ticket, className, methodName, args);
@@ -143,7 +135,9 @@ public class JCL_FacadeImpl implements JCL_facade {
 	//execute with Method name as arg
 	@Override
 	public Future<JCL_result> execute(String className, String methodName, Object... args) {
-		
+		System.out.print("154 ");
+		System.out.print("methodName -> ");
+		System.out.println(methodName);
 		//create ticket
 		Long ticket = numOfTasks.getAndIncrement();	
 		
@@ -166,7 +160,6 @@ public class JCL_FacadeImpl implements JCL_facade {
 	
 	//execute with JCL_taskImpl as arg
 	public Future<JCL_result> execute(JCL_task task) {
-		
 		//create ticket
 		Long ticket = numOfTasks.getAndIncrement();	
 		
@@ -726,6 +719,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 	public static class Holder{
 		
 		private static GenericResource<JCL_task> resource;
+		private static Map<String, String> kafkaResults;
 		
 		public Holder(){ }
 		
@@ -733,7 +727,6 @@ public class JCL_FacadeImpl implements JCL_facade {
 		protected JCL_result getResultBlocking(Long ID) {
 			/** begin 3.0 **/
 			JCL_result kafkaReturn = new JCL_resultImpl();
-			
 			
 			try {				
 				join(ID);
@@ -779,7 +772,9 @@ public class JCL_FacadeImpl implements JCL_facade {
 
 		//execute with Method name as arg
 		protected Future<JCL_result> execute(String className, String methodName, Object... args) {
-			
+			System.out.print("791 ");
+			System.out.print("methodName -> ");
+			System.out.println(methodName);
 			//create ticket
 			Long ticket = numOfTasks.getAndIncrement();	
 			
@@ -803,11 +798,16 @@ public class JCL_FacadeImpl implements JCL_facade {
 		
 		//Wait
 		private void join(long ID) {
+			/** begin 3.0 **/
+			JCL_result jclr = new JCL_resultImpl();
+			Long id = new Long(ID);
+			
 			try {
-				/** begin 3.0 **/
-				SharedJCLResultsThread consumerThread = new SharedJCLResultsThread(
+				Holder.kafkaResults = new ConcurrentHashMap<>();
+				
+				SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
 					4580,
-					results
+					kafkaResults
 				);
 
 				consumerThread.start();
@@ -815,8 +815,13 @@ public class JCL_FacadeImpl implements JCL_facade {
 				consumerThread.join();
 
 				consumerThread.end();
+				
+				jclr.setCorrectResult(
+					kafkaResults.get(
+						id.toString()
+				));
 				/** end 3.0 **/
-				JCL_result jclr = results.get(ID);
+				
 				if((jclr.getCorrectResult()==null)&&(jclr.getErrorResult()==null)){				
 					synchronized (jclr){
 						//Necessary with use Lambari in parallel (racing condition)

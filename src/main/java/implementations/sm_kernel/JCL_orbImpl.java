@@ -28,6 +28,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.primitives.Primitives;
 
 import implementations.dm_kernel.KafkaMessageSerializer;
@@ -52,7 +55,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	private static JCL_orb instancePacu;
 	private Map<Long, T> results;
 	/** 3.0 begin **/
-	private Producer<String, byte[]> kafkaProducer;
+	private Producer<String, String> kafkaProducer;
 	/** 3.0 end **/
 	
 	private URLClassLoader classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
@@ -77,7 +80,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 			StringSerializer.class.getName());
 		producerProperties.put(
 			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
-			ByteArraySerializer.class.getName());
+			StringSerializer.class.getName());
 		
 		this.kafkaProducer = new KafkaProducer<>(producerProperties);
 		/** 3.0 end **/
@@ -105,7 +108,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				jResult.setTime(task.getTaskTime());
 //				jResult.setMemorysize(ObjectSizeCalculator.getObjectSize(instance));
 				jResult.setMemorysize(10);
-				System.out.println("JCL_orbImpl 108");
+				
 				if (result != null) {
 					jResult.setCorrectResult(result);
 				} else {
@@ -114,16 +117,19 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 				/** begin 3.0 **/
 				Long ID = new Long(task.getTaskID());
-				KafkaMessageSerializer serializer = new KafkaMessageSerializer();
 				
-				ProducerRecord<String, byte[]> producedRecord = new ProducerRecord<>(
+				ObjectMapper objectMapper = new ObjectMapper()
+						.configure(SerializationFeature.INDENT_OUTPUT, true)
+						.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+				
+				ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
 					"jcl-input", 
 					ID.toString(),
-					serializer.serialize(result)
+					objectMapper.writeValueAsString(result)
 				);
 				
 				try {
-					this.kafkaProducer.send(producedRecord).get();
+					this.kafkaProducer.send(producedRecord);
 					
 				} catch(Throwable t) {
 					System
@@ -647,6 +653,8 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	@Override
 	public Object getValueLocking(Object key) {
 		try {
+			System.out.print("globalVars -> ");
+			System.out.println(globalVars);
 			Object obj = globalVars.get(key);
 			if (obj != null) {
 				synchronized (locks) {
@@ -654,6 +662,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 					if (locks.contains(key))
 						return null;
 
+//					PILHA
 					locks.add(key);
 					return obj;
 				}
@@ -674,6 +683,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				globalVars.put(key, value);
 				locks.remove(key);
 
+//				PILHA
 				return true;
 			} else {
 				return false;

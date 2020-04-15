@@ -78,14 +78,22 @@ public class SharedResourceThread<T1, T2> extends Thread{
 			kafkaConsumer.close();
 		}
 		
-		ConsumerRecords<String, byte[]> consumedRecords = kafkaConsumer.poll(Duration.ofMillis(150));
+		ConsumerRecords<String, byte[]> consumedRecords = kafkaConsumer.poll(Duration.ofNanos(Long.MAX_VALUE));
 		
 		try {
         	synchronized(this.localMemory) {
         		consumedRecords.forEach(
     				(record) -> {
-    					this.localMemory.put(record.key(), record.value());
-    					System.out.println("jcl-output = { " + record.key() + ": " + record.value() + " }");
+    					if(record.value() != null) {
+    						this.localMemory.put(record.key(), record.value());
+    						
+    						System.out.println("jcl-output = {"
+								+ " partition:" + record.partition() 
+								+ " offset:" + record.offset() 
+								+ " key: " + record.key() 
+								+ " value: " + record.value() + " }");    						
+    					}
+    					
     				}
 				);
         	}
@@ -93,13 +101,15 @@ public class SharedResourceThread<T1, T2> extends Thread{
 		} catch (Exception e) {
 			e.printStackTrace();
        } finally {
-        	try {
-        		selector.close();
-        		serverSocket.socket().close();
-        		serverSocket.close();
-        	} catch (Exception e) {
-        		// do nothing - server failed
-        	}
+    	   kafkaConsumer.close();
+    	   
+    	   try {
+				selector.close();
+				serverSocket.socket().close();
+				serverSocket.close();
+			} catch (Exception e) {
+				// do nothing - server failed
+			}
         }
 	}	
 	

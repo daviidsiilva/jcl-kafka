@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -52,6 +53,9 @@ import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.ForeachAction;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import commom.GenericConsumer;
 import commom.GenericResource;
@@ -241,9 +245,20 @@ public class MainHost extends Server{
 				
 				KStream<String, byte[]> source = builder.<String, byte[]>stream("jcl-input");
 				
+//				KTable<Integer, Long> locationsPerUserKTable = source.
+//				   = source.groupBy((k, v) -> v.length)
+//				       .count();
+//				System.out.println("locationsPerUser -> ");
+//				System.out.println(locationsPerUser);
+				
 				source.foreach(new ForeachAction<String, byte[]>() {
 				    public void apply(String key, byte[] value) {
-				        System.out.println("jcl-input = { " + key + ": " + value + " }");
+				    	Map<String, Object> recordInput = new HashMap<>();
+				    	
+				    	recordInput.put("key", key);
+				    	recordInput.put("value", value);
+						
+				        System.out.println(recordInput);
 				    }
 				 });
 				
@@ -251,12 +266,12 @@ public class MainHost extends Server{
 					.to("jcl-output");
 
 				final Topology topology = builder.build();
-				
+
 				KafkaStreams streams = new KafkaStreams(
 					topology, 
 					streamProperties
 				);
-				
+
 				final CountDownLatch latch = new CountDownLatch(1);
 				
 				Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook"){
