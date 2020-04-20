@@ -44,20 +44,17 @@ import java.io.OutputStream;
 import implementations.util.ByteBuffer;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
@@ -66,7 +63,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.stream.Collectors;
 
 /** 3.0 begin **/
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -80,7 +76,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 /** 3.0 end **/
-import com.fasterxml.jackson.databind.util.JSONPObject;
 
 import javassist.ClassPool;
 import javassist.CtClass;
@@ -114,20 +109,28 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private int port;
 	
 	/** 3.0 begin **/
-	protected String userID = "1";
+	public String userID;
 	
 	public Map<String, String> localMemory;
 	private Producer<String, String> kafkaProducer;
 	private Map<Object, Map<String, Long>> variableLockOffsets;
 	
-	private Boolean FROM_BEGGINING = true;
-	private Boolean LOCKED = true;
+	private Boolean FROM_BEGGINING = false;
+	private static final String ACQUIRED = "ACQUIRED";
+	private Long offset;
 	private static final String TRUE = "true";
 	private static final String FALSE = "false";
 	/** 3.0 end **/
 	protected JCL_FacadeImpl(Properties properties){
+		//Start seed rand GV
+		rand = new XORShiftRandom();
 		
 		/** 3.0 begin **/
+		Integer la = new Integer(rand.nextInt(delta, 982123, 6));
+		this.userID = la.toString();
+		
+		this.offset = 0L;
+		
 		Properties producerProperties = new Properties();
 		producerProperties.put(
 			ProducerConfig.CLIENT_ID_CONFIG, 
@@ -168,9 +171,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			jars = new ConcurrentHashMap<String, JCL_message_register>();			
 			jarsSlaves = new ConcurrentHashMap<String,List<String>>();			
 			jcl = super.getInstance();
-
-			//Start seed rand GV
-			rand = new XORShiftRandom();
 
 			//config connection			
 			ConnectorImpl.timeout = timeOut;			
@@ -1706,136 +1706,112 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		/** end 3.0 **/
 	}
 
-	private String userIDFromLowerOffsetToLockKey(String lockKey) {
-		this.variableLockOffsets.get(lockKey).forEach(
-			(user, offset) -> {
-				System.out.println("user -> " + user + ", offset -> " + offset);
-			}
-		);
+	private String userIDWhoCanLock(String lockKey) {
+		Map.Entry<String, String> minEntry = null;
 		
-		return "";
+		for (Map.Entry<String, String> entry : this.localMemory.entrySet()) {
+			if(entry.getKey().startsWith(lockKey + ":")) {
+				if (minEntry == null || Long.parseLong(entry.getValue()) < Long.parseLong(minEntry.getValue())) {
+					minEntry = entry;
+				}
+			}
+		}
+		
+		if(minEntry.getKey() != null) {
+			String[] idSplited = minEntry.getKey().split(":");
+			
+			if (idSplited.length > 1) {
+				
+				return idSplited[idSplited.length - 1];
+			}
+		}
+		
+		return "none";
+	}
+	
+	private SharedResourceConsumerThread generateConsumer() throws IOException {
+		return new SharedResourceConsumerThread(
+			this.port,
+			this.localMemory,
+			this.offset
+		);
 	}
 	
 	@Override
 	public JCL_result getValueLocking(Object key) {
-		Object lockKey = "$" + key;
-		Object lockKeyWithUserID = lockKey + ":" + this.userID; 
+		JCL_result kafkaResult = new JCL_resultImpl();
 		
-		lock.readLock().lock();
+		Object lockKey = "$" + key;
+		Object lockKeyWithUserID = lockKey + ":" + this.userID;
+		
 		try {
-			//Get Host
-			int[] t = rand.HostList(delta, key.hashCode(), devicesStorage.size());
+			
+			SharedResourceConsumerThread consumerThread = this
+				.generateConsumer();
+			
+			consumerThread.start();
+			consumerThread.join();
+			consumerThread.end();
 			
 			if(!this.localMemory.containsKey(lockKey)) {
-				SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
-						this.userID,
-						this.localMemory,
-						lockKeyWithUserID,
-						this.FROM_BEGGINING
-				);
-				
-				try {
-					consumerThread.start();
-					consumerThread.join();
-					consumerThread.end();
-					
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-			
-			if(this.localMemory.containsKey(lockKey) && this.localMemory.get(lockKey) == TRUE) {
-				SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
-						this.userID,
-						this.localMemory,
-						lockKeyWithUserID
-				);
-				
-				try {
-					consumerThread.start();
-					consumerThread.join();
-					consumerThread.end();
-					
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-			
-			if(!this.localMemory.containsKey(lockKey) || 
-				(this.localMemory.containsKey(lockKey) && this.localMemory.get(lockKey) == FALSE)) {
 				ProducerRecord<String, String> producedRecord;
 				
 				producedRecord = new ProducerRecord<>(
 					"jcl-input", 
-					lockKey.toString(),
-				    TRUE
+					lockKeyWithUserID.toString(),
+				    this.offset.toString()
 				);
 				
 				this.kafkaProducer
 					.send(producedRecord);
 			}
 			
-			if(!this.localMemory.containsKey(lockKey)) {
-				SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
-						1235,
-						this.localMemory
-				);
-				
-				try {
-					consumerThread.start();
-					consumerThread.join();
-					consumerThread.end();
-					
-				} catch (Exception e) {
-					e.printStackTrace();
+			consumerThread = this.generateConsumer();
+			
+			consumerThread.start();
+			consumerThread.join();
+			consumerThread.end();
+			
+			do {
+				String userIDWhoCanLock = this.userIDWhoCanLock(lockKey.toString());
+
+				if(userIDWhoCanLock != this.userID.toString()) {
+					ProducerRecord<String, String> producedRecord;
+
+					producedRecord = new ProducerRecord<>(
+							"jcl-input", 
+							lockKey.toString(),
+							ACQUIRED
+							);
+
+					this.kafkaProducer
+					.send(producedRecord);
+
+					kafkaResult.setCorrectResult(this.localMemory.get(key));
+
+					return kafkaResult;
 				}
-			}
+
+				consumerThread = this.generateConsumer();
+
+				consumerThread.start();
+				consumerThread.join();
+				consumerThread.end();
+
+			} while(this.localMemory.containsKey(lockKey) && this.localMemory.get(lockKey) == ACQUIRED);
 			
-			System.out.println("++++++++++++++++++++++++++++++++++++++++");
-			System.out.println(this.localMemory);
+			kafkaResult.setCorrectResult(null);
 			
-			List<Future<JCL_result>> ticks = new ArrayList<Future<JCL_result>>();
-
-			for(int hostId:t){
-				Entry<String, Map<String, String>> hostPort = devicesStorage.get(hostId);
-				System.out.print("hostPort -> ");
-				System.out.println(hostPort);
-				String host = hostPort.getValue().get("IP");
-				String port = hostPort.getValue().get("PORT");
-				String mac = hostPort.getValue().get("MAC");
-				String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-
-				//getValueLocking using lambari
-				Object[] argsLam = {key, host, port, mac, portS, hostId};
-				ticks.add(jcl.execute("JCL_FacadeImplLamb", "getValueLocking", argsLam));
-			}
-
-			for(Future<JCL_result> tick:ticks){
-				JCL_result result = tick.get();
-				if(!result.getCorrectResult().toString().equals("No value found!")){
-					return 	result;
-				}	
-			}
-
-			//getValue using lambari on Server
-			int hostId = rand.nextInt(delta, key.hashCode(), devicesStorage.size());
-			Object[] argsLam = {key,serverAdd,serverPort,hostId};
-			Future<JCL_result> tick = jcl.execute("JCL_FacadeImplLamb", "getValueLockingOnHost", argsLam);
-
-			JCL_result re = tick.get();
-			if (re.getCorrectResult()=="no result");re.setCorrectResult(null);
-
-
-			return re;
-
+			return kafkaResult;
 		} catch (Exception e){
 			System.err.println("problem in JCL facade getValueLocking(Object key)");
+			
 			JCL_result jclr = new JCL_resultImpl();
 			jclr.setErrorResult(e);
+			
 			e.printStackTrace();
+			
 			return jclr;
-		} finally {
-			lock.readLock().unlock();
 		}
 	}
 

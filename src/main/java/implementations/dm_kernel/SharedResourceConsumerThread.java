@@ -16,6 +16,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
 public class SharedResourceConsumerThread extends Thread{
@@ -25,13 +26,14 @@ public class SharedResourceConsumerThread extends Thread{
 	protected final ServerSocketChannel serverSocket;
 	
 	/** 3.0 begin **/
-	private String userID;
+	private static final String ACQUIRED = "ACQUIRED";
+	private static final String RELEASED = "RELEASED";
 	private final Long BEGIN = new Long(0);
 	
 	private Map<String, String> localMemory;
-	Consumer<String, String> kafkaConsumer;
-	Object lockKey;
-	Boolean fromBeggining = false;
+	private Consumer<String, String> kafkaConsumer;
+	private Boolean fromBeggining = false;
+	private Long offset = 0L;
 	/** 3.0 end **/
 	
 	public SharedResourceConsumerThread(
@@ -49,6 +51,35 @@ public class SharedResourceConsumerThread extends Thread{
 	
 	public SharedResourceConsumerThread(
 		int port, 
+		Map<String, String> localMemory,
+		Long offset
+	) throws IOException {
+		this.port = 4952;
+		this.selector = Selector.open();
+		this.serverSocket = ServerSocketChannel.open();
+		
+		/** 3.0 begin **/
+		this.localMemory = localMemory;
+		this.offset = offset;
+		/** 3.0 end **/
+	}
+	
+	public SharedResourceConsumerThread(
+		int port, 
+		Map<String, String> localMemory,
+		String userID
+	) throws IOException {
+		this.port = 4952;
+		this.selector = Selector.open();
+		this.serverSocket = ServerSocketChannel.open();
+		
+		/** 3.0 begin **/
+		this.localMemory = localMemory;
+		/** 3.0 end **/
+	}
+	
+	public SharedResourceConsumerThread(
+		int port, 
 		Map<String, String> localMemory, 
 		Boolean fromBeggining
 	) throws IOException {
@@ -58,40 +89,6 @@ public class SharedResourceConsumerThread extends Thread{
 		
 		/** 3.0 begin **/
 		this.localMemory = localMemory;
-		this.fromBeggining = fromBeggining;
-		/** 3.0 end **/
-	}
-	
-	public SharedResourceConsumerThread(
-		String userID,
-		Map<String, String> localMemory, 
-		Object lockKey
-	) throws IOException {
-		this.port = 4952;
-		this.selector = Selector.open();
-		this.serverSocket = ServerSocketChannel.open();
-		
-		/** 3.0 begin **/
-		this.userID = userID;
-		this.localMemory = localMemory;
-		this.lockKey = lockKey;
-		/** 3.0 end **/
-	}
-	
-	public SharedResourceConsumerThread(
-		String userID,
-		Map<String, String> localMemory, 
-		Object lockKey, 
-		Boolean fromBeggining
-	) throws IOException {
-		this.port = 4952;
-		this.selector = Selector.open();
-		this.serverSocket = ServerSocketChannel.open();
-		
-		/** 3.0 begin **/
-		this.userID = userID;
-		this.localMemory = localMemory;
-		this.lockKey = lockKey;
 		this.fromBeggining = fromBeggining;
 		/** 3.0 end **/
 	}
@@ -126,7 +123,6 @@ public class SharedResourceConsumerThread extends Thread{
 		
 		this.kafkaConsumer = new KafkaConsumer<>(consumerProperties);
 		
-		
 		try {
 			this.kafkaConsumer.subscribe(
 				Arrays.asList("jcl-output"));
@@ -134,30 +130,41 @@ public class SharedResourceConsumerThread extends Thread{
 			ConsumerRecords<String, String> consumedRecords = this.kafkaConsumer
 				.poll(Duration.ofNanos(Long.MAX_VALUE));
 			
-			if((this.lockKey != null) && this.localMemory.containsKey(this.lockKey)) {
-				Long offset = new Long(this.localMemory.get(this.lockKey)); 
-				
-				this.kafkaConsumer.seek(
-					new TopicPartition("jcl-output", 0), 
-					offset
-				);
-			}
-			
 			if(this.fromBeggining) {
 				this.kafkaConsumer.seek(
 					new TopicPartition("jcl-output", 0), 
 					BEGIN
 				);
 			}
+			
+			if(this.offset != null) {
+				this.kafkaConsumer.seek(
+					new TopicPartition("jcl-output", 0), 
+					this.offset
+				);
+			}
 		
         	synchronized(this.localMemory) {
         		consumedRecords.forEach(
     				(record) -> {
-    					if(record.key().charAt(0) == '$') { 
-    						this.localMemory.put(
-								record.key() + ':' + this.userID, 
-								record.offset() + ""
-							);
+    					this.offset = record.offset();
+    					
+    					if(record.key().charAt(0) == '$') {
+    						if(record.value() == ACQUIRED) {
+    							this.localMemory.put(
+									record.key(), 
+									record.offset() + ""
+								);
+    						} else if(record.value() == RELEASED) {
+    							this.localMemory.remove(
+									record.key()
+								);
+    						} else {
+    							this.localMemory.put(
+    								record.key(), 
+    								record.value()
+    							);
+    						}
     						
     					} else {
     						this.localMemory.put(
@@ -179,10 +186,10 @@ public class SharedResourceConsumerThread extends Thread{
 				);
         	}      	        
 		} catch (Exception e) {
-			e.printStackTrace();
 			
-			this.kafkaConsumer.close();
+			e.printStackTrace();
        } finally {
+    	   
     	   this.kafkaConsumer.close();
     	   /** 3.0 end **/
     	   try {
@@ -194,11 +201,7 @@ public class SharedResourceConsumerThread extends Thread{
 			}
         }
 	}
-	/** 3.0 begin **/
-	public void shutdown() {
-		this.kafkaConsumer.wakeup();
-	}
-	/** 3.0 end **/
+
     private void openServerSocket() {
         try {
         	this.serverSocket.configureBlocking(false);
