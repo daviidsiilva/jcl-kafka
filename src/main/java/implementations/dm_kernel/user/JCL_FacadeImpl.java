@@ -58,6 +58,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -70,6 +71,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -116,6 +118,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private Producer<String, String> kafkaProducer;
 	
 	private static final String ACQUIRED = "ACQUIRED";
+	private static final String RELEASED = "RELEASED";
 	private Long offset;
 	/** 3.0 end **/
 	
@@ -1625,46 +1628,51 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			lock.readLock().unlock();
 		}
 	}
+	
+	private RecordMetadata produceKafkaRecord(String topic, String key, String value) throws InterruptedException, ExecutionException {
+		ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
+			topic, 
+			key,
+			value
+		);
+		
+		return this.kafkaProducer
+			.send(producedRecord)
+			.get();
+	}
 
 	@Override
 	public boolean setValueUnlocking(Object key, Object value) {
-		lock.readLock().lock();
+		
+		Object lockKey = "$" + key;
+		Object lockKeyWithUserID = lockKey + ":" + this.userID;
+		
 		try {
-			//Get Host
-			int[] t = rand.HostList(delta, key.hashCode(), devicesStorage.size());
-			List<Future<JCL_result>> ticks = new ArrayList<Future<JCL_result>>();
-			for(int hostId:t){
-				Entry<String, Map<String, String>> hostPort = devicesStorage.get(hostId);				
-				String host = hostPort.getValue().get("IP");
-				String port = hostPort.getValue().get("PORT");
-				String mac = hostPort.getValue().get("MAC");
-				String portS = hostPort.getValue().get("PORT_SUPER_PEER");
+			this.instantiateGlobalVar(
+				key, 
+				value
+			);			
+			
+			this.produceKafkaRecord(
+				"jcl-input", 
+				lockKey.toString(),
+				RELEASED
+			);
 
-				//setValueUnlocking using lambari
-				Object[] argsLam = {key,value,host,port,mac,portS,hostId};
-				ticks.add(jcl.execute("JCL_FacadeImplLamb", "setValueUnlocking", argsLam));
-			}
+//			this.produceKafkaRecord(
+//				"jcl-input", 
+//				lockKeyWithUserID.toString(),
+//				RELEASED
+//			);
 
-			//return value
-			for(Future<JCL_result> tick:ticks){
-				JCL_result result = tick.get();
-				if((Boolean)result.getCorrectResult()){
-					return 	true;
-				}			
-			}
-
-			//getValue using lambari on Server
-			int hostId = rand.nextInt(0, key.hashCode(), devicesStorage.size());
-			Object[] argsLam = {key,value,serverAdd,serverPort,hostId};
-			Future<JCL_result> tick = jcl.execute("JCL_FacadeImplLamb", "setValueUnlockingOnHost", argsLam);
-
-			return (Boolean) (tick.get()).getCorrectResult();
+			
+			return true;
 		} catch (Exception e) {
 			System.err.println("problem in JCL facade setValueUnlocking(Object key, Object value)");
+			
 			e.printStackTrace();
+			
 			return false;
-		}finally {
-			lock.readLock().unlock();
 		}
 	}
 
@@ -1775,7 +1783,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 							);
 
 					this.kafkaProducer
-					.send(producedRecord);
+						.send(producedRecord);
 
 					kafkaResult.setCorrectResult(this.localMemory.get(key));
 
@@ -2331,29 +2339,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			controlConnector.disconnect();
 			return (Boolean) mr.getRegisterData();
 		}
-
-		//add key list to hash key map
-		//		protected boolean hashAdd(String gvName,java.util.Map.Entry<String, String> hostIp,List<Object> keys, int IDhost){
-		//
-		//			//Get Ip host
-		//			Entry<String, Map<String, String>> hostPort = devicesStorage.get(IDhost);
-		//
-		//			String host = hostPort.getValue().get("IP");
-		//			String port = hostPort.getValue().get("PORT");
-		//			String mac = hostPort.getValue().get("MAC");
-		//			String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-		//
-		//			// hashAdd using lambari
-		//			JCL_message_generic mc = new MessageGenericImpl();
-		//			Object[] ob = {gvName,keys};
-		//			mc.setRegisterData(ob);
-		//			mc.setType(36);
-		//			JCL_connector controlConnector = new ConnectorImpl();
-		//			controlConnector.connect(host,Integer.parseInt(port),mac);
-		//			JCL_message_generic mr = (JCL_message_generic) controlConnector.sendReceiveG(mc, portS);
-		//			controlConnector.disconnect();
-		//			return (Boolean) mr.getRegisterData();
-		//		}
 
 		//remove key from hash key map
 		protected boolean hashRemove(String gvName,Object Key, int IDhost){
