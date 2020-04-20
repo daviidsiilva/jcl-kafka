@@ -55,6 +55,7 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
@@ -109,25 +110,21 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private int port;
 	
 	/** 3.0 begin **/
-	public String userID;
+	public UUID userID;
 	
 	public Map<String, String> localMemory;
 	private Producer<String, String> kafkaProducer;
-	private Map<Object, Map<String, Long>> variableLockOffsets;
 	
-	private Boolean FROM_BEGGINING = false;
 	private static final String ACQUIRED = "ACQUIRED";
 	private Long offset;
-	private static final String TRUE = "true";
-	private static final String FALSE = "false";
 	/** 3.0 end **/
+	
 	protected JCL_FacadeImpl(Properties properties){
 		//Start seed rand GV
 		rand = new XORShiftRandom();
 		
 		/** 3.0 begin **/
-		Integer la = new Integer(rand.nextInt(delta, 982123, 6));
-		this.userID = la.toString();
+		this.userID = UUID.randomUUID();
 		
 		this.offset = 0L;
 		
@@ -148,8 +145,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		this.kafkaProducer = new KafkaProducer<>(producerProperties);
 		
 		this.localMemory = new ConcurrentHashMap<String, String>();
-		
-		this.variableLockOffsets = new HashMap<>();
 		/** 3.0 end **/
 		
 		try {
@@ -1673,29 +1668,32 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 	}
 
+	private SharedResourceConsumerThread generateConsumer() throws IOException {
+		return new SharedResourceConsumerThread(
+			this.port,
+			this.localMemory,
+			this.offset
+		);
+	}
+	
 	@Override
 	public JCL_result getValue(Object key) {
 		/** begin 3.0 **/
+		SharedResourceConsumerThread consumerThread;
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
 		try {
-			if(!this.localMemory.containsKey(key)) {
-				SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
-					this.port,
-					this.localMemory,
-					this.FROM_BEGGINING
-				);
+			while(!this.localMemory.containsKey(key)) {
+				consumerThread = this.generateConsumer();
 				
 				consumerThread.start();
-				
 				consumerThread.join();
-				
 				consumerThread.end();
 			}
 			
 			kafkaReturn.setCorrectResult(
-					this.localMemory.get(key) 
-					);
+				this.localMemory.get(key) 
+			);
 			
 		} catch(Exception e) {
 			e.printStackTrace();
@@ -1706,7 +1704,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		/** end 3.0 **/
 	}
 
-	private String userIDWhoCanLock(String lockKey) {
+	private String userIDFromLowerOffset (String lockKey) {
 		Map.Entry<String, String> minEntry = null;
 		
 		for (Map.Entry<String, String> entry : this.localMemory.entrySet()) {
@@ -1727,14 +1725,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 		
 		return "none";
-	}
-	
-	private SharedResourceConsumerThread generateConsumer() throws IOException {
-		return new SharedResourceConsumerThread(
-			this.port,
-			this.localMemory,
-			this.offset
-		);
 	}
 	
 	@Override
@@ -1773,9 +1763,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			consumerThread.end();
 			
 			do {
-				String userIDWhoCanLock = this.userIDWhoCanLock(lockKey.toString());
+				String userIDWhoCanLock = this.userIDFromLowerOffset(lockKey.toString());
 
-				if(userIDWhoCanLock != this.userID.toString()) {
+				if(userIDWhoCanLock == this.userID.toString()) {
 					ProducerRecord<String, String> producedRecord;
 
 					producedRecord = new ProducerRecord<>(

@@ -805,35 +805,24 @@ public class JCL_FacadeImpl implements JCL_facade {
 			try {
 				Holder.kafkaResults = new ConcurrentHashMap<>();
 				
-				SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
-					4580,
-					kafkaResults
-				);
-
-				consumerThread.start();
-
-				consumerThread.join();
-
-				consumerThread.end();
-				
-				jclr.setCorrectResult(
-					kafkaResults.get(
-						id.toString()
-				));
+				while (!kafkaResults.containsKey(id.toString())) {
+					SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
+						4580,
+						kafkaResults
+					);
+		
+					consumerThread.start();
+					consumerThread.join();
+					consumerThread.end();
+					
+					jclr.setCorrectResult(
+						kafkaResults.get(
+							id.toString()
+					));				
+				}
 				/** end 3.0 **/
 				
-				if((jclr.getCorrectResult()==null)&&(jclr.getErrorResult()==null)){				
-					synchronized (jclr){
-						//Necessary with use Lambari in parallel (racing condition)
-						if((jclr.getCorrectResult()==null)&&(jclr.getErrorResult()==null)){
-						jclr.wait();
-						System.err.println("jclr.wait()");
-						}
-					}	
-					
-					join(ID);
-				}
-			}catch (Exception e){
+			} catch (Exception e){
 				System.err.println("problem in JCL facade join ");
 				System.err.println("Contains Key result: "+results.containsKey(ID));
 				e.printStackTrace();
