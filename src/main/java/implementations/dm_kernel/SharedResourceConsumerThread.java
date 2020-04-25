@@ -16,7 +16,6 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
 public class SharedResourceConsumerThread extends Thread{
@@ -26,14 +25,13 @@ public class SharedResourceConsumerThread extends Thread{
 	protected final ServerSocketChannel serverSocket;
 	
 	/** 3.0 begin **/
-	private static final String ACQUIRED = "ACQUIRED";
-	private static final String RELEASED = "RELEASED";
-	private final Long BEGIN = new Long(0);
+	private static final String ACQUIRED = "-1";
+	private static final String RELEASED = "-2";
 	
-	private Map<String, String> localMemory;
-	private Consumer<String, String> kafkaConsumer;
-	private Boolean fromBeggining = false;
-	private Long offset = 0L;
+	public Map<String, String> localMemory;
+	public Consumer<String, String> kafkaConsumer;
+	public Boolean fromBeggining = false;
+	public Long offset = 0L;
 	/** 3.0 end **/
 	
 	public SharedResourceConsumerThread(
@@ -130,13 +128,6 @@ public class SharedResourceConsumerThread extends Thread{
 			ConsumerRecords<String, String> consumedRecords = this.kafkaConsumer
 				.poll(Duration.ofNanos(Long.MAX_VALUE));
 			
-			if(this.fromBeggining) {
-				this.kafkaConsumer.seek(
-					new TopicPartition("jcl-output", 0), 
-					BEGIN
-				);
-			}
-			
 			if(this.offset != null) {
 				this.kafkaConsumer.seek(
 					new TopicPartition("jcl-output", 0), 
@@ -150,29 +141,29 @@ public class SharedResourceConsumerThread extends Thread{
     					this.offset = record.offset();
     					
     					if(record.key().charAt(0) == '$') {
-    						if(record.value() == ACQUIRED) {
-    							this.localMemory.put(
-									record.key(), 
-									record.offset() + ""
-								);
-    						} else if(record.value() == RELEASED) {
-    							this.localMemory.remove(
-									record.key()
-								);
-    						} else {
+    						if(Long.parseLong(record.value()) == Long.parseLong(ACQUIRED)) {
     							this.localMemory.put(
     								record.key(), 
     								record.value()
     							);
+    							
+    						} else if(Long.parseLong(record.value()) == Long.parseLong(RELEASED)) {
+    							this.localMemory.remove(
+									record.key()
+								);
+    							
+    						} else {
+    							this.localMemory.put(
+									record.key(), 
+									record.offset() + ""
+								);
     						}
-    						
     					} else {
     						this.localMemory.put(
 								record.key(), 
 								record.value()
 							);
     					}
-    					
   						
     					Map<String, Object> recordOutput = new HashMap<>();
     					

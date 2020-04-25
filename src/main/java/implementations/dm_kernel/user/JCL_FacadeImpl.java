@@ -117,8 +117,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public Map<String, String> localMemory;
 	private Producer<String, String> kafkaProducer;
 	
-	private static final String ACQUIRED = "ACQUIRED";
-	private static final String RELEASED = "RELEASED";
+	private static final String ACQUIRED = "-1";
+	private static final String RELEASED = "-2";
 	private Long offset;
 	/** 3.0 end **/
 	
@@ -1629,7 +1629,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 	}
 	
-	private RecordMetadata produceKafkaRecord(String topic, String key, String value) throws InterruptedException, ExecutionException {
+	private Future<RecordMetadata> produceKafkaRecord(String topic, String key, String value) throws InterruptedException, ExecutionException {
 		ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
 			topic, 
 			key,
@@ -1637,8 +1637,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		);
 		
 		return this.kafkaProducer
-			.send(producedRecord)
-			.get();
+			.send(producedRecord);
 	}
 
 	@Override
@@ -1659,12 +1658,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				RELEASED
 			);
 
-//			this.produceKafkaRecord(
-//				"jcl-input", 
-//				lockKeyWithUserID.toString(),
-//				RELEASED
-//			);
-
+			this.produceKafkaRecord(
+				"jcl-input", 
+				lockKeyWithUserID.toString(),
+				RELEASED
+			);
 			
 			return true;
 		} catch (Exception e) {
@@ -1712,27 +1710,27 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		/** end 3.0 **/
 	}
 
-	private String userIDFromLowerOffset (String lockKey) {
+	private UUID userIDFromLowerOffset (String lockKey) {
 		Map.Entry<String, String> minEntry = null;
 		
 		for (Map.Entry<String, String> entry : this.localMemory.entrySet()) {
 			if(entry.getKey().startsWith(lockKey + ":")) {
-				if (minEntry == null || Long.parseLong(entry.getValue()) < Long.parseLong(minEntry.getValue())) {
-					minEntry = entry;
+				if(Long.parseLong(entry.getValue()) >= 0) {
+					if (minEntry == null || Long.parseLong(entry.getValue()) < Long.parseLong(minEntry.getValue())) {
+						minEntry = entry;
+					}
 				}
 			}
 		}
 		
-		if(minEntry.getKey() != null) {
-			String[] idSplited = minEntry.getKey().split(":");
+		String thisUserIDStringified = this.userID.toString();
+		
+		if(minEntry.getKey().contains(thisUserIDStringified)) {
+			return this.userID;
 			
-			if (idSplited.length > 1) {
-				
-				return idSplited[idSplited.length - 1];
-			}
 		}
 		
-		return "none";
+		return UUID.randomUUID();
 	}
 	
 	@Override
@@ -1743,44 +1741,36 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		Object lockKeyWithUserID = lockKey + ":" + this.userID;
 		
 		try {
+			ProducerRecord<String, String> producedRecord;
 			
-			SharedResourceConsumerThread consumerThread = this
-				.generateConsumer();
+			producedRecord = new ProducerRecord<>(
+				"jcl-input", 
+				lockKeyWithUserID.toString(),
+			    this.offset.toString()
+			);
 			
-			consumerThread.start();
-			consumerThread.join();
-			consumerThread.end();
+			this.kafkaProducer
+				.send(producedRecord);
 			
-			if(!this.localMemory.containsKey(lockKey)) {
-				ProducerRecord<String, String> producedRecord;
+			SharedResourceConsumerThread consumerThread;
+			
+			while(!this.localMemory.containsKey(lockKeyWithUserID)) {
+				consumerThread = this.generateConsumer();
 				
-				producedRecord = new ProducerRecord<>(
-					"jcl-input", 
-					lockKeyWithUserID.toString(),
-				    this.offset.toString()
-				);
-				
-				this.kafkaProducer
-					.send(producedRecord);
+				consumerThread.start();
+				consumerThread.join();
+				consumerThread.end();
 			}
 			
-			consumerThread = this.generateConsumer();
-			
-			consumerThread.start();
-			consumerThread.join();
-			consumerThread.end();
-			
 			do {
-				String userIDWhoCanLock = this.userIDFromLowerOffset(lockKey.toString());
+				UUID userIDWhoCanLock = this.userIDFromLowerOffset(lockKey.toString());
 
-				if(userIDWhoCanLock == this.userID.toString()) {
-					ProducerRecord<String, String> producedRecord;
-
+				if(userIDWhoCanLock == this.userID) {
 					producedRecord = new ProducerRecord<>(
-							"jcl-input", 
-							lockKey.toString(),
-							ACQUIRED
-							);
+						"jcl-input", 
+						lockKey.toString(),
+						ACQUIRED
+					);
 
 					this.kafkaProducer
 						.send(producedRecord);
@@ -1790,12 +1780,12 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					return kafkaResult;
 				}
 
-				consumerThread = this.generateConsumer();
+				consumerThread = new SharedResourceConsumerThread(port, localMemory);
 
 				consumerThread.start();
 				consumerThread.join();
 				consumerThread.end();
-
+				
 			} while(this.localMemory.containsKey(lockKey) && this.localMemory.get(lockKey) == ACQUIRED);
 			
 			kafkaResult.setCorrectResult(null);
