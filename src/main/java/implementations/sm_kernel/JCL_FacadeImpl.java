@@ -112,9 +112,6 @@ public class JCL_FacadeImpl implements JCL_facade {
 	}
 	
 	public Future<JCL_result> execute(Long ticket, String className, String methodName, Object... args) {
-		System.out.print("131 ");
-		System.out.print("methodName -> ");
-		System.out.println(methodName);
 		try{
 			//create task			
 			JCL_task t = new JCL_taskImpl(ticket, className, methodName, args);
@@ -135,9 +132,6 @@ public class JCL_FacadeImpl implements JCL_facade {
 	//execute with Method name as arg
 	@Override
 	public Future<JCL_result> execute(String className, String methodName, Object... args) {
-		System.out.print("154 ");
-		System.out.print("methodName -> ");
-		System.out.println(methodName);
 		//create ticket
 		Long ticket = numOfTasks.getAndIncrement();	
 		
@@ -720,6 +714,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 		
 		private static GenericResource<JCL_task> resource;
 		private static Map<String, String> kafkaResults;
+		private Long offset = 0L;
 		
 		public Holder(){ }
 		
@@ -772,9 +767,6 @@ public class JCL_FacadeImpl implements JCL_facade {
 
 		//execute with Method name as arg
 		protected Future<JCL_result> execute(String className, String methodName, Object... args) {
-			System.out.print("791 ");
-			System.out.print("methodName -> ");
-			System.out.println(methodName);
 			//create ticket
 			Long ticket = numOfTasks.getAndIncrement();	
 			
@@ -808,18 +800,19 @@ public class JCL_FacadeImpl implements JCL_facade {
 				while (!kafkaResults.containsKey(id.toString())) {
 					SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
 						4580,
-						kafkaResults
+						kafkaResults,
+						this.offset
 					);
 		
 					consumerThread.start();
 					consumerThread.join();
 					consumerThread.end();
-					
-					jclr.setCorrectResult(
-						kafkaResults.get(
-							id.toString()
-					));				
 				}
+				
+				jclr.setCorrectResult(
+					kafkaResults.get(
+					id.toString()
+				));
 				/** end 3.0 **/
 				
 			} catch (Exception e){

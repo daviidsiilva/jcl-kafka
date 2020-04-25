@@ -172,7 +172,7 @@ public class SharedResourceConsumerThread extends Thread{
     					recordOutput.put("value", record.value());
 						recordOutput.put("key", record.key());
 						
-						System.out.println(recordOutput.toString());
+//						System.out.println(recordOutput.toString());
     				}
 				);
         	}      	        

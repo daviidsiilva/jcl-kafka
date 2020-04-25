@@ -562,10 +562,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				//watch this method
 				watchExecMeth = true;
 				
-				JCLFuture<JCL_result> lala = new JCLFuture<JCL_result>(ticket);
-				
-				System.out.println("lala -> " + lala);
-				return lala;
+				return new JCLFuture<JCL_result>(ticket);
 			}
 		} catch (Exception e) {
 			System.err
@@ -684,7 +681,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		List<Entry<String, String>> hosts;
 		List<Future<JCL_result>> tickets;
 		tickets = new ArrayList<Future<JCL_result>>();
-		System.out.println(11);
+		
 		try {
 
 			//get all host
@@ -711,7 +708,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		List<Future<JCL_result>> tickets;
 		tickets = new ArrayList<Future<JCL_result>>();
 		try {
-			System.out.println(12);
+
 			//get all host
 			int[] d = {2,3,6,7};
 			hosts = this.getDevices(d);
@@ -736,7 +733,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		List<Future<JCL_result>> tickets;
 		tickets = new ArrayList<Future<JCL_result>>();
 		try {
-			System.out.println(14);
+			
 			//get all host
 			int[] d = {2,3,6,7};
 			hosts = this.getDevices(d);
@@ -1170,7 +1167,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	@Override
 	public boolean instantiateGlobalVar(Object key,String nickName,
 			File[] jar, Object[] defaultVarValue) {
-		System.out.println("line 1120");
+		
 		lock.readLock().lock();
 		try {
 			//Get Host

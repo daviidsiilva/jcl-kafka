@@ -393,105 +393,33 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 		}
 	}
 	
-	private Producer<Long, String> createProducer() {
-        Properties producerProperties = new Properties();
-        
-        producerProperties.put(
-        		ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
-        		"localhost:9092");
-        producerProperties.put(
-        		ProducerConfig.CLIENT_ID_CONFIG, 
-        		"KafkaExampleProducer");
-        producerProperties.put(
-        		ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
-                StringSerializer.class.getName());
-        producerProperties.put(
-        		ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
-        		StringSerializer.class.getName());
-        
-        return new KafkaProducer<>(producerProperties);
-    }
-	
 	public Object[] execute(JCL_task task,String host,String port, String mac, String portS,boolean hostChange) {
-		
-		Thread producer = new Thread() {
-			public void run() {
-				Properties producerProperties = new Properties();
-				
-		        producerProperties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-		        producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "kafkaProducer" + host);
-		        producerProperties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-		        producerProperties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-		        
-				Producer<String, String> kafkaProducer = new KafkaProducer<>(producerProperties);
-				
-				final ProducerRecord<String, String> record =
-		                new ProducerRecord<>("streams-jcl-input", "test", "test");
-
-		        try {
-		        	RecordMetadata metadata = kafkaProducer.send(record).get();
-		        	
-		        	System.out.printf("sent record(key=%s value=%s) " +  "meta(partition=%d, offset=%d)\n",
-		        			record.key(), record.value(), metadata.partition(), metadata.offset());
-		        } catch(Exception e) {
-		        	System.err.println(e);
-		        } finally {
-		        	kafkaProducer.flush();
-		        	kafkaProducer.close();
-		        }
-			}
-		};
-		
-		Thread consumer = new Thread() {
-			public void run() {
-				Properties producerProperties = new Properties();
-				
-		        producerProperties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-		        producerProperties.put(ProducerConfig.CLIENT_ID_CONFIG, "kafkaProducer" + host);
-		        producerProperties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-		        producerProperties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-		        
-				Consumer<String, String> kafkaConsumer = new KafkaConsumer<>(producerProperties);
-				
-		        try {
-		        	kafkaConsumer.subscribe(kafkaTopics);
-		        	
-		        } catch(Exception e) {
-		        	System.err.println(e);
-		        } finally {
-		        	kafkaConsumer.close();
-		        }
-			}
-		};
-		
-		producer.start();
-		consumer.start();
-		
 		try {
-				//Create msg				
-				MessageTaskImpl msgTask = new MessageTaskImpl();
-				task.setPort(this.port);
-				task.setHostChange(hostChange);
-				msgTask.setTask(task);
-				//Type execute
-				msgTask.setType(4);
-					
-				//Send msg
-				JCL_connector taskConnector = new ConnectorImpl();
-				taskConnector.connect(host, Integer.parseInt(port),mac);
-				task.setTaskTime(System.nanoTime());
+			//Create msg				
+			MessageTaskImpl msgTask = new MessageTaskImpl();
+			task.setPort(this.port);
+			task.setHostChange(hostChange);
+			msgTask.setTask(task);
+			//Type execute
+			msgTask.setType(4);
 				
+			//Send msg
+			JCL_connector taskConnector = new ConnectorImpl();
+			taskConnector.connect(host, Integer.parseInt(port),mac);
+			task.setTaskTime(System.nanoTime());
+			
+			
+			JCL_message_result msgResult = taskConnector.sendReceive(msgTask,portS);
+			long ticket = (Long) msgResult.getResult().getCorrectResult();
+			taskConnector.disconnect();
 				
-				JCL_message_result msgResult = taskConnector.sendReceive(msgTask,portS);
-				long ticket = (Long) msgResult.getResult().getCorrectResult();
-				taskConnector.disconnect();
-					
-				return new Object[]{ticket,host,port,mac,portS};
+			return new Object[]{ticket,host,port,mac,portS};
 
 		} catch (Exception e) {
 			System.err
-					.println("JCL facade problem in execute(String className, Object... args)");
-					e.printStackTrace();
+				.println("JCL facade problem in execute(String className, Object... args)");
+			e.printStackTrace();
+			
 			return null;
 		}
 	}

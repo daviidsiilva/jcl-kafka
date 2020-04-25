@@ -168,7 +168,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 						jResult.setTime(task.getTaskTime());
 						jResult.setMemorysize(10);
-						System.out.println("QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ");
+						
 						if (result != null) {
 							jResult.setCorrectResult(result);
 						} else {
@@ -176,23 +176,26 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						}
 
 						/** begin 3.0 **/
-//						Long ID = new Long(task.getTaskID());
-//						KafkaMessageSerializer serializer = new KafkaMessageSerializer();
-//						
-//						ProducerRecord<String, byte[]> producedRecord = new ProducerRecord<>(
-//							"jcl-input", 
-//							ID.toString(),
-//							serializer.serialize(result)
-//						);
-//						
-//						try {
-//							this.kafkaProducer.send(producedRecord).get();
-//							
-//						} catch(Throwable t) {
-//							System
-//							.err
-//							.println(t);
-//						}
+						Long ID = new Long(task.getTaskID());
+						
+						ObjectMapper objectMapper = new ObjectMapper()
+								.configure(SerializationFeature.INDENT_OUTPUT, true)
+								.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+						
+						ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
+							"jcl-input", 
+							ID.toString(),
+							objectMapper.writeValueAsString(result)
+						);
+						
+						try {
+							this.kafkaProducer.send(producedRecord);
+							
+						} catch(Throwable t) {
+							System
+							.err
+							.println(t);
+						}
 						/** end 3.0 **/
 
 						synchronized (jResult) {
@@ -653,8 +656,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	@Override
 	public Object getValueLocking(Object key) {
 		try {
-			System.out.print("globalVars -> ");
-			System.out.println(globalVars);
 			Object obj = globalVars.get(key);
 			if (obj != null) {
 				synchronized (locks) {
