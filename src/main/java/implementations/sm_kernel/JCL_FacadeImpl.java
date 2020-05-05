@@ -32,6 +32,7 @@ import commom.GenericConsumer;
 import commom.GenericResource;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
+import commom.LocalMemory;
 
 public class JCL_FacadeImpl implements JCL_facade {
 	
@@ -713,7 +714,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 	public static class Holder{
 		
 		private static GenericResource<JCL_task> resource;
-		private static Map<String, String> kafkaResults;
+		private static Map<Object, Object> kafkaResults;
 		private Long offset = 0L;
 		
 		public Holder(){ }
@@ -795,7 +796,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 			Long id = new Long(ID);
 			
 			try {
-				Holder.kafkaResults = new ConcurrentHashMap<>();
+				Holder.kafkaResults = LocalMemory.getInstance();
 				
 				while (!kafkaResults.containsKey(id.toString())) {
 					SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(

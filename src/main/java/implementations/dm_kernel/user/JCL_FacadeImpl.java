@@ -5,6 +5,7 @@ import implementations.collections.JCLPFuture;
 import implementations.collections.JCLSFuture;
 import implementations.collections.JCLVFuture;
 import implementations.dm_kernel.ConnectorImpl;
+import implementations.dm_kernel.JCLTopic;
 import implementations.dm_kernel.MessageGenericImpl;
 import implementations.dm_kernel.MessageListGlobalVarImpl;
 import implementations.dm_kernel.MessageListTaskImpl;
@@ -66,13 +67,24 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.CreateTopicsResult;
+import org.apache.kafka.clients.admin.DeleteTopicsResult;
+import org.apache.kafka.clients.admin.KafkaAdminClient;
+import org.apache.kafka.clients.admin.ListTopicsResult;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 /** 3.0 begin **/
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.utils.Time;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -84,6 +96,7 @@ import javassist.ClassPool;
 import javassist.CtClass;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
+import commom.LocalMemory;
 
 public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Holder implements JCL_facade{
 
@@ -115,7 +128,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public UUID userID;
 	
 	public Map<String, String> localMemory;
-	private Producer<String, String> kafkaProducer;
+	private static Producer<String, String> kafkaProducer;
+	private Map<Object, Object> memory;
 	
 	private static final String ACQUIRED = "-1";
 	private static final String RELEASED = "-2";
@@ -145,9 +159,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
 			StringSerializer.class.getName());
 		
-		this.kafkaProducer = new KafkaProducer<>(producerProperties);
+		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<>(producerProperties);
 		
 		this.localMemory = new ConcurrentHashMap<String, String>();
+		
+		this.memory = LocalMemory.getInstance();
 		/** 3.0 end **/
 		
 		try {
@@ -1225,14 +1241,22 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		ProducerRecord<String, String> producedRecord;
 		
+		Properties topicProperties = new Properties();
+		
+		topicProperties.put("bootstrap.servers", "localhost:9092");
+		topicProperties.put("topic.name", key.toString());
+		topicProperties.put("topic.partitions", "1");
+		topicProperties.put("topic.replication.factor", "1");
+		
+		new JCLTopic().createTopic(topicProperties);
+		
 		try {			
 			producedRecord = new ProducerRecord<>(
-				"jcl-input", 
 				key.toString(),
 			    objectMapper.writeValueAsString(instance)
 			);
 		
-			this.kafkaProducer
+			JCL_FacadeImpl.kafkaProducer
 				.send(producedRecord);
 			
 		} catch(JsonProcessingException e) {
@@ -1247,6 +1271,37 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	//Use on JCLHashMap to inst bins values
 	protected static boolean instantiateGlobalVar(Set<Entry<?,?>> set, String gvname){
+		System.out.println(set);
+		/** begin 3.0 **/
+//		try {
+//			for(Entry<?,?> ent : set) {
+//				ObjectMapper objectMapper = new ObjectMapper()
+//					.configure(SerializationFeature.INDENT_OUTPUT, true)
+//					.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+//				
+//				ProducerRecord<String, String> producedRecord;
+//				
+//				Properties topicProperties = new Properties();
+//				
+//				topicProperties.put("bootstrap.servers", "localhost:9092");
+//				topicProperties.put("topic.name", ent.getKey());
+//				topicProperties.put("topic.partitions", "1");
+//				topicProperties.put("topic.replication.factor", "1");
+//				
+//				new JCLTopic().createTopic(topicProperties);
+//				
+//					producedRecord = new ProducerRecord<>(
+//						"key.toString()",
+//					    objectMapper.writeValueAsString(instance)
+//					);
+//				
+//					kafkaProducer
+//						.send(producedRecord);
+//			}
+//		} catch(Exception e) {
+//			
+//		}
+		/** end 3.0 **/
 		lock.readLock().lock();
 		try {
 			Map<Integer,JCL_message_list_global_var> gvList = new HashMap<Integer,JCL_message_list_global_var>();
@@ -1674,20 +1729,29 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private SharedResourceConsumerThread generateConsumer() throws IOException {
 		return new SharedResourceConsumerThread(
 			this.port,
-			this.localMemory,
+			this.memory,
+			this.offset
+		);
+	}
+	
+	private SharedResourceConsumerThread generateConsumer(Object topicName) throws IOException {
+		return new SharedResourceConsumerThread(
+			this.port,
+			this.memory,
+			topicName.toString(),
 			this.offset
 		);
 	}
 	
 	@Override
 	public JCL_result getValue(Object key) {
-		/** begin 3.0 **/
+//		/** begin 3.0 **/
 		SharedResourceConsumerThread consumerThread;
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
 		try {
-			while(!this.localMemory.containsKey(key)) {
-				consumerThread = this.generateConsumer();
+			while(!this.memory.containsKey(key)) {
+				consumerThread = this.generateConsumer(key);
 				
 				consumerThread.start();
 				consumerThread.join();
@@ -1695,7 +1759,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			}
 			
 			kafkaReturn.setCorrectResult(
-				this.localMemory.get(key) 
+				this.memory.get(key) 
 			);
 			
 		} catch(Exception e) {
@@ -1746,7 +1810,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			    this.offset.toString()
 			);
 			
-			this.kafkaProducer
+			JCL_FacadeImpl.kafkaProducer
 				.send(producedRecord);
 			
 			SharedResourceConsumerThread consumerThread;
@@ -1777,7 +1841,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					return kafkaResult;
 				}
 
-				consumerThread = new SharedResourceConsumerThread(port, localMemory);
+				consumerThread = new SharedResourceConsumerThread(port, memory);
 
 				consumerThread.start();
 				consumerThread.join();
@@ -1848,48 +1912,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean containsGlobalVar(Object key) {
-		lock.readLock().lock();
-		try {
-			//Get Host
-			int[] t = rand.HostList(delta, key.hashCode(), devicesStorage.size());
-			List<Future<JCL_result>> ticks = new ArrayList<Future<JCL_result>>();
-
-			for(int hostId:t){
-				Entry<String, Map<String, String>> hostPort = devicesStorage.get(hostId);
-
-				String host = hostPort.getValue().get("IP");
-				String port = hostPort.getValue().get("PORT");
-				String mac = hostPort.getValue().get("MAC");
-				String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-
-
-				//containsGlobalVar using lambari
-				Object[] argsLam = {key,host,Integer.parseInt(port),mac,portS,hostId};
-				ticks.add(jcl.execute("JCL_FacadeImplLamb", "containsGlobalVar", argsLam));
-			}
-
-			//return value
-			for(Future<JCL_result> tick:ticks){
-				JCL_result result = tick.get();
-				if((Boolean)result.getCorrectResult()){
-					return 	true;
-				}			
-			}
-
-			//containsGlobalVar using lambari
-			int hostId = rand.nextInt(delta, key.hashCode(), devicesStorage.size());
-
-			Object[] argsLam = {key,serverAdd,serverPort,serverAdd,"0",hostId};
-			Future<JCL_result> tick = jcl.execute("JCL_FacadeImplLamb", "containsGlobalVar", argsLam);
-			return (Boolean) (tick.get()).getCorrectResult();
-		} catch (Exception e) {
-			System.err
-			.println("problem in JCL facade containsGlobalVar(String nickName)");
-			e.printStackTrace();
-			return false;
-		} finally {
-			lock.readLock().unlock();
-		}
+		return this.localMemory.containsKey(key);
 	}
 
 	@Override

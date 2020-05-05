@@ -16,6 +16,7 @@ import java.util.AbstractCollection;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -71,10 +72,8 @@ public class JCLHashMapPacu<K,V>
     /**
      *Register Class.
      */
-    private boolean regClass = false;
+    private boolean regClass = false; 
 
-
-    
     /**
      * Constructs with HashMap name.
      */
@@ -90,34 +89,32 @@ public class JCLHashMapPacu<K,V>
 		}
     	
 		DEFAULT_JCL = super.getInstancePacu(properties);
-        init();
+		
+		this.init();
     }
     
     // internal utilities
     void init(){
-
-    	List<java.util.Map.Entry<String, Map<String, String>>> hosts = super.getDeviceS();
-		idLocalize = (Math.abs(gvName.hashCode())%hosts.size());
-		
-    	if(!DEFAULT_JCL.containsGlobalVar(gvName)){
-    		Map<String, String> hostIp = hosts.get(idLocalize).getValue();    		
-    		super.createhashKey(gvName, idLocalize);
-    		DEFAULT_JCL.instantiateGlobalVar(gvName, hostIp);
-    		Localize = hostIp;
-    		
-    	}else{
-    		
-    		Localize =  (Map<String, String>) DEFAULT_JCL.getValue(gvName).getCorrectResult();
-    	}
+    	DEFAULT_JCL.instantiateGlobalVar(gvName, "MAP");
+    	DEFAULT_JCL.instantiateGlobalVar(gvName + ".size", 0);
     }
 
+    private String getKeyNameMapped(Object key) {
+    	String keyMapped = "%" + key.toString();
+    	
+    	return keyMapped;
+    }
+    
     /**
      * Returns the number of key-value mappings in this map.
      *
      * @return the number of key-value mappings in this map
      */
     public int size(){
-        return super.hashSize(gvName,idLocalize);
+    	
+    	V size = this.get(gvName + ".size");
+    	
+        return 0;
     }        
 
     /**
@@ -137,13 +134,13 @@ public class JCLHashMapPacu<K,V>
      * Returns the value to which the specified key is mapped.
      */
     public V get(Object key){
-    	V oldValue = null;
-        if (key != null){        	
-        		oldValue = (V) DEFAULT_JCL.getValue(key.toString()+"¬Map¬"+gvName).getCorrectResult();
-        }else{
-       	 System.out.println("Can't get<K,V> with null key!");
-        }             
-        return (oldValue == null ? null : oldValue);
+    	String keyNameMapped = this.getKeyNameMapped(key);
+    	
+    	JCL_result jclResult = JCLHashMapPacu.DEFAULT_JCL.getValue(keyNameMapped);
+    	
+    	V value = (V) jclResult.getCorrectResult();
+    	
+    	return value;
     }
         
     /**
@@ -151,10 +148,12 @@ public class JCLHashMapPacu<K,V>
      */
     public V getLock(Object key){
     	V oldValue = null;
-        if (key != null){        	
-        		oldValue = (V) DEFAULT_JCL.getValueLocking(key.toString()+"¬Map¬"+gvName).getCorrectResult();
+        if (key != null) {
+        	String keyNameMapped = this.getKeyNameMapped(key);
+        	
+        	oldValue = (V) JCLHashMapPacu.DEFAULT_JCL.getValueLocking(keyNameMapped).getCorrectResult();
         }else{
-       	 System.out.println("Can't get<K,V> with null key!");
+        	System.out.println("Can't get<K,V> with null key!");
         }        
         return (oldValue == null ? null : oldValue);
     }
@@ -185,24 +184,24 @@ public class JCLHashMapPacu<K,V>
      * @param value value to be associated with the specified key
      * @return the previous value associated with <tt>key</tt>, or
      *         <tt>null</tt> if there was no mapping for <tt>key</tt>.
-     */    
+     */
+    
     public V put(K key, V value){
-    	Object oldValue = null;
-        if ((key != null) && ((oldValue = super.hashPut((key.toString()+"¬Map¬"+gvName), value))!=null)){        	
-        		        	
-			// ################ Serialization key ########################
-			LinkedBuffer buffer = LinkedBuffer.allocate(1048576);
-			ObjectWrap objW = new ObjectWrap(key);	
-			Schema<ObjectWrap> scow = RuntimeSchema.getSchema(ObjectWrap.class);
-			byte[] k = ProtobufIOUtil.toByteArray(objW,scow, buffer);			
-			// ################ Serialization key ########################
-			
-        	super.hashAdd(gvName,ByteBuffer.wrap(k),idLocalize);
-        }else{
-       	 System.out.println("Null key or fault in put<K,V> on cluster!");
-        }
+    	String keyNameMapped = this.getKeyNameMapped(key);
+    	
+    	JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(
+    		keyNameMapped, 
+    		value
+    	);
+    	
+    	int size = this.size();
+    	
+    	JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(
+    		keyNameMapped, 
+    		size + 1
+    	);
         
-        return (V)oldValue;
+        return value;
     }
     
     
