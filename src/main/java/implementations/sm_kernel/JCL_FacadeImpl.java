@@ -724,7 +724,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 			/** begin 3.0 **/
 			JCL_result kafkaReturn = new JCL_resultImpl();
 			
-			try {				
+			try {
 				join(ID);
 				
 				kafkaReturn = results.get(ID);
@@ -802,6 +802,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 					SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
 						4580,
 						kafkaResults,
+						id.toString(),
 						this.offset
 					);
 		
@@ -812,13 +813,14 @@ public class JCL_FacadeImpl implements JCL_facade {
 				
 				jclr.setCorrectResult(
 					kafkaResults.get(
-					id.toString()
-				));
+						id.toString()
+					)
+				);
 				/** end 3.0 **/
 				
 			} catch (Exception e){
 				System.err.println("problem in JCL facade join ");
-				System.err.println("Contains Key result: "+results.containsKey(ID));
+				System.err.println("Contains Key result: " + results.containsKey(ID));
 				e.printStackTrace();
 			}		
 		}

@@ -590,9 +590,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public Future<JCL_result> execute(String objectNickname, String methodName,
-			Object... args) {		
+			Object... args) {
 		try {
-//			System.out.println(2);
 			if (!JPF){
 				//Get host
 				String host = null,port = null,mac = null, portS = null;
@@ -1234,6 +1233,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	synchronized public boolean instantiateGlobalVar(Object key, Object instance){
+		System.out.println("key: " + key + " instance: " + instance);
 		/** begin 3.0 **/
 		ObjectMapper objectMapper = new ObjectMapper()
 			.configure(SerializationFeature.INDENT_OUTPUT, true)
@@ -1680,17 +1680,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			lock.readLock().unlock();
 		}
 	}
-	
-	private Future<RecordMetadata> produceKafkaRecord(String topic, String key, String value) throws InterruptedException, ExecutionException {
-		ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
-			topic, 
-			key,
-			value
-		);
-		
-		return this.kafkaProducer
-			.send(producedRecord);
-	}
 
 	@Override
 	public boolean setValueUnlocking(Object key, Object value) {
@@ -1702,17 +1691,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			this.instantiateGlobalVar(
 				key, 
 				value
-			);			
+			);
 			
-			this.produceKafkaRecord(
-				"jcl-input", 
-				lockKey.toString(),
+			this.instantiateGlobalVar(
+				lockKey, 
 				RELEASED
 			);
-
-			this.produceKafkaRecord(
-				"jcl-input", 
-				lockKeyWithUserID.toString(),
+			
+			this.instantiateGlobalVar(
+				lockKeyWithUserID, 
 				RELEASED
 			);
 			
@@ -1726,14 +1713,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 	}
 
-	private SharedResourceConsumerThread generateConsumer() throws IOException {
-		return new SharedResourceConsumerThread(
-			this.port,
-			this.memory,
-			this.offset
-		);
-	}
-	
 	private SharedResourceConsumerThread generateConsumer(Object topicName) throws IOException {
 		return new SharedResourceConsumerThread(
 			this.port,
@@ -1745,7 +1724,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	@Override
 	public JCL_result getValue(Object key) {
-//		/** begin 3.0 **/
+		/** begin 3.0 **/
 		SharedResourceConsumerThread consumerThread;
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
@@ -1802,21 +1781,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		Object lockKeyWithUserID = lockKey + ":" + this.userID;
 		
 		try {
-			ProducerRecord<String, String> producedRecord;
-			
-			producedRecord = new ProducerRecord<>(
-				"jcl-input", 
-				lockKeyWithUserID.toString(),
-			    this.offset.toString()
+			this.instantiateGlobalVar(
+				lockKeyWithUserID, 
+				this.offset
 			);
-			
-			JCL_FacadeImpl.kafkaProducer
-				.send(producedRecord);
 			
 			SharedResourceConsumerThread consumerThread;
 			
 			while(!this.localMemory.containsKey(lockKeyWithUserID)) {
-				consumerThread = this.generateConsumer();
+				consumerThread = this.generateConsumer(lockKeyWithUserID);
 				
 				consumerThread.start();
 				consumerThread.join();
@@ -1827,16 +1800,16 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				UUID userIDWhoCanLock = this.userIDFromLowerOffset(lockKey.toString());
 
 				if(userIDWhoCanLock == this.userID) {
-					producedRecord = new ProducerRecord<>(
-						"jcl-input", 
-						lockKey.toString(),
+					this.instantiateGlobalVar(
+						lockKey, 
 						ACQUIRED
 					);
 
-					this.kafkaProducer
-						.send(producedRecord);
-
-					kafkaResult.setCorrectResult(this.localMemory.get(key));
+					kafkaResult.setCorrectResult(
+						this.localMemory.get(
+							key
+						)
+					);
 
 					return kafkaResult;
 				}

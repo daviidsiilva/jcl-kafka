@@ -1,6 +1,7 @@
 package implementations.sm_kernel;
 
 import interfaces.kernel.JCL_execute;
+import interfaces.kernel.JCL_facade;
 import interfaces.kernel.JCL_orb;
 import interfaces.kernel.JCL_result;
 import interfaces.kernel.JCL_task;
@@ -34,6 +35,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.primitives.Primitives;
 
 import implementations.dm_kernel.KafkaMessageSerializer;
+import implementations.dm_kernel.user.JCL_FacadeImpl;
 import javassist.ClassClassPath;
 import javassist.ClassPool;
 import javassist.CtClass;
@@ -116,26 +118,12 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				}
 
 				/** begin 3.0 **/
-				Long ID = new Long(task.getTaskID());
+				JCL_facade jcl = JCL_FacadeImpl.getInstance();
 				
-				ObjectMapper objectMapper = new ObjectMapper()
-						.configure(SerializationFeature.INDENT_OUTPUT, true)
-						.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-				
-				ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
-					"jcl-input", 
-					ID.toString(),
-					objectMapper.writeValueAsString(result)
+				jcl.instantiateGlobalVar(
+					task.getTaskID(), 
+					result
 				);
-				
-				try {
-					this.kafkaProducer.send(producedRecord);
-					
-				} catch(Throwable t) {
-					System
-					.err
-					.println(t);
-				}
 				/** end 3.0 **/
 				
 				synchronized (jResult) {
@@ -176,26 +164,12 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						}
 
 						/** begin 3.0 **/
-						Long ID = new Long(task.getTaskID());
+						JCL_facade jcl = JCL_FacadeImpl.getInstance();
 						
-						ObjectMapper objectMapper = new ObjectMapper()
-								.configure(SerializationFeature.INDENT_OUTPUT, true)
-								.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-						
-						ProducerRecord<String, String> producedRecord = new ProducerRecord<>(
-							"jcl-input", 
-							ID.toString(),
-							objectMapper.writeValueAsString(result)
+						jcl.instantiateGlobalVar(
+							task.getTaskID(), 
+							result
 						);
-						
-						try {
-							this.kafkaProducer.send(producedRecord);
-							
-						} catch(Throwable t) {
-							System
-							.err
-							.println(t);
-						}
 						/** end 3.0 **/
 
 						synchronized (jResult) {
