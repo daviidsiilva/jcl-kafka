@@ -32,6 +32,7 @@ import commom.GenericConsumer;
 import commom.GenericResource;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
+import commom.KafkaConsumerRunner;
 import commom.LocalMemory;
 
 public class JCL_FacadeImpl implements JCL_facade {
@@ -714,7 +715,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 	public static class Holder{
 		
 		private static GenericResource<JCL_task> resource;
-		private static Map<Object, Object> kafkaResults;
+		private static Map<Object, Object> localMemory;
 		private Long offset = 0L;
 		
 		public Holder(){ }
@@ -796,23 +797,17 @@ public class JCL_FacadeImpl implements JCL_facade {
 			Long id = new Long(ID);
 			
 			try {
-				Holder.kafkaResults = LocalMemory.getInstance();
+				Holder.localMemory = LocalMemory.getInstance();
 				
-				while (!kafkaResults.containsKey(id.toString())) {
-					SharedResourceConsumerThread consumerThread = new SharedResourceConsumerThread(
-						4580,
-						kafkaResults,
-						id.toString(),
-						this.offset
-					);
-		
-					consumerThread.start();
-					consumerThread.join();
-					consumerThread.end();
+				while (!localMemory.containsKey(id.toString())) {
+					KafkaConsumerRunner consumerRunner = new KafkaConsumerRunner(localMemory, id);
+					
+					consumerRunner.run();
+					consumerRunner.shutdown();
 				}
 				
 				jclr.setCorrectResult(
-					kafkaResults.get(
+					localMemory.get(
 						id.toString()
 					)
 				);
@@ -820,7 +815,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 				
 			} catch (Exception e){
 				System.err.println("problem in JCL facade join ");
-				System.err.println("Contains Key result: " + results.containsKey(ID));
+				System.err.println("Contains Key " + ID + " result: " + results.containsKey(ID));
 				e.printStackTrace();
 			}		
 		}

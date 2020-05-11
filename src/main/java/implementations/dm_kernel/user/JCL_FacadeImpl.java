@@ -41,15 +41,19 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.time.Duration;
 
 import implementations.util.ByteBuffer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -75,6 +79,8 @@ import org.apache.kafka.clients.admin.KafkaAdminClient;
 import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 /** 3.0 begin **/
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -96,6 +102,7 @@ import javassist.ClassPool;
 import javassist.CtClass;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
+import commom.KafkaConsumerRunner;
 import commom.LocalMemory;
 
 public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Holder implements JCL_facade{
@@ -126,10 +133,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	/** 3.0 begin **/
 	public UUID userID;
+	private String bootstrapServers = "localhost:9092";
 	
-	public Map<String, String> localMemory;
 	private static Producer<String, String> kafkaProducer;
-	private Map<Object, Object> memory;
+	private Map<Object, Object> localMemory;
 	
 	private static final String ACQUIRED = "-1";
 	private static final String RELEASED = "-2";
@@ -161,9 +168,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<>(producerProperties);
 		
-		this.localMemory = new ConcurrentHashMap<String, String>();
+		this.localMemory = LocalMemory.getInstance();
 		
-		this.memory = LocalMemory.getInstance();
 		/** 3.0 end **/
 		
 		try {
@@ -250,15 +256,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 						},0,5, TimeUnit.SECONDS);
 			}
-
-//			simpleSever = new SimpleServer(
-//				this.port,
-//				devices,
-//				lock, 
-//				this.localMemory,
-//				this
-//			);
-//			simpleSever.start();
 
 			//getHosts using lambari
 			int type = 5;
@@ -1233,7 +1230,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	synchronized public boolean instantiateGlobalVar(Object key, Object instance){
-		System.out.println("key: " + key + " instance: " + instance);
+//		System.out.println("key: " + key + " instance: " + instance);
 		/** begin 3.0 **/
 		ObjectMapper objectMapper = new ObjectMapper()
 			.configure(SerializationFeature.INDENT_OUTPUT, true)
@@ -1243,7 +1240,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		Properties topicProperties = new Properties();
 		
-		topicProperties.put("bootstrap.servers", "localhost:9092");
+		topicProperties.put("bootstrap.servers", this.bootstrapServers);
 		topicProperties.put("topic.name", key.toString());
 		topicProperties.put("topic.partitions", "1");
 		topicProperties.put("topic.replication.factor", "1");
@@ -1712,51 +1709,41 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			return false;
 		}
 	}
-
-	private SharedResourceConsumerThread generateConsumer(Object topicName) throws IOException {
-		return new SharedResourceConsumerThread(
-			this.port,
-			this.memory,
-			topicName.toString(),
-			this.offset
-		);
-	}
 	
 	@Override
 	public JCL_result getValue(Object key) {
 		/** begin 3.0 **/
-		SharedResourceConsumerThread consumerThread;
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
 		try {
-			while(!this.memory.containsKey(key)) {
-				consumerThread = this.generateConsumer(key);
+			if(!this.localMemory.containsKey(key)) {
+				KafkaConsumerRunner consumerRunner = new KafkaConsumerRunner(localMemory, key);
 				
-				consumerThread.start();
-				consumerThread.join();
-				consumerThread.end();
+				consumerRunner.run();
 			}
 			
-			kafkaReturn.setCorrectResult(
-				this.memory.get(key) 
-			);
-			
-		} catch(Exception e) {
+		} catch (Exception e) {
 			e.printStackTrace();
 			kafkaReturn.setErrorResult(e);
 		}
+		
+		kafkaReturn.setCorrectResult(
+			this.localMemory.get(
+				key
+			)
+		);
 		
 		return kafkaReturn;
 		/** end 3.0 **/
 	}
 
 	private UUID userIDFromLowerOffset (String lockKey) {
-		Map.Entry<String, String> minEntry = null;
+		Entry<Object, Object> minEntry = null;
 		
-		for (Map.Entry<String, String> entry : this.localMemory.entrySet()) {
-			if(entry.getKey().startsWith(lockKey + ":")) {
-				if(Long.parseLong(entry.getValue()) >= 0) {
-					if (minEntry == null || Long.parseLong(entry.getValue()) < Long.parseLong(minEntry.getValue())) {
+		for (Entry<Object, Object> entry : this.localMemory.entrySet()) {
+			if(entry.getKey().toString().startsWith(lockKey + ":")) {
+				if(Long.parseLong(entry.getValue().toString()) >= 0) {
+					if (minEntry == null || Long.parseLong(entry.getValue().toString()) < Long.parseLong(minEntry.getValue().toString())) {
 						minEntry = entry;
 					}
 				}
@@ -1765,7 +1752,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		String thisUserIDStringified = this.userID.toString();
 		
-		if(minEntry.getKey().contains(thisUserIDStringified)) {
+		if(minEntry.getKey().toString().contains(thisUserIDStringified)) {
 			return this.userID;
 			
 		}
@@ -1786,14 +1773,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				this.offset
 			);
 			
-			SharedResourceConsumerThread consumerThread;
-			
 			while(!this.localMemory.containsKey(lockKeyWithUserID)) {
-				consumerThread = this.generateConsumer(lockKeyWithUserID);
-				
-				consumerThread.start();
-				consumerThread.join();
-				consumerThread.end();
+				this.getValue(lockKey);
+				System.out.println(this.localMemory);
 			}
 			
 			do {
@@ -1814,11 +1796,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					return kafkaResult;
 				}
 
-				consumerThread = new SharedResourceConsumerThread(port, memory);
-
-				consumerThread.start();
-				consumerThread.join();
-				consumerThread.end();
+				this.getValue(lockKeyWithUserID);
 				
 			} while(this.localMemory.containsKey(lockKey) && this.localMemory.get(lockKey) == ACQUIRED);
 			
