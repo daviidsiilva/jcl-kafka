@@ -30,10 +30,12 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.primitives.Primitives;
 
+import implementations.dm_kernel.JCLTopic;
 import implementations.dm_kernel.KafkaMessageSerializer;
 import implementations.dm_kernel.user.JCL_FacadeImpl;
 import javassist.ClassClassPath;
@@ -71,6 +73,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 		
 		/** 3.0 begin **/
 		Properties producerProperties = new Properties();
+		
 		producerProperties.put(
 			ProducerConfig.CLIENT_ID_CONFIG, 
 			"jcl-client");
@@ -90,6 +93,14 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 	@Override
 	public void execute(JCL_task task) {
+		/** begin 3.0 **/
+		ObjectMapper objectMapper = new ObjectMapper()
+			.configure(SerializationFeature.INDENT_OUTPUT, true)
+			.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+		
+		ProducerRecord<String, String> producedRecord;
+		/** end 3.0 **/
+		
 		try {
 			int para;
 			
@@ -118,12 +129,28 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				}
 
 				/** begin 3.0 **/
-				JCL_facade jcl = JCL_FacadeImpl.getInstance();
+				if(!this.containsGlobalVar(task.getTaskID())) {
+					Properties topicProperties = new Properties();
+					
+					topicProperties.put("bootstrap.servers", "localhost:9092");
+					topicProperties.put("topic.name", task.getTaskID());
+					topicProperties.put("topic.partitions", "1");
+					topicProperties.put("topic.replication.factor", "1");
+					
+					new JCLTopic().createTopic(topicProperties);
+				}
 				
-				jcl.instantiateGlobalVar(
-					task.getTaskID(), 
-					result
-				);
+				try {
+					producedRecord = new ProducerRecord<>(
+						objectMapper.writeValueAsString(task.getTaskID()),
+					    objectMapper.writeValueAsString(result)
+					);
+					System.out.println(producedRecord);
+					kafkaProducer
+						.send(producedRecord);		
+				} catch(JsonProcessingException e) {
+					e.printStackTrace();
+				}
 				/** end 3.0 **/
 				
 				synchronized (jResult) {
@@ -164,12 +191,28 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						}
 
 						/** begin 3.0 **/
-						JCL_facade jcl = JCL_FacadeImpl.getInstance();
+						if(!this.containsGlobalVar(task.getTaskID())) {
+							Properties topicProperties = new Properties();
+							
+							topicProperties.put("bootstrap.servers", "localhost:9092");
+							topicProperties.put("topic.name", task.getTaskID());
+							topicProperties.put("topic.partitions", "1");
+							topicProperties.put("topic.replication.factor", "1");
+							
+							new JCLTopic().createTopic(topicProperties);
+						}
 						
-						jcl.instantiateGlobalVar(
-							task.getTaskID(), 
-							result
-						);
+						try {
+							producedRecord = new ProducerRecord<>(
+								objectMapper.writeValueAsString(task.getTaskID()),
+							    objectMapper.writeValueAsString(result)
+							);
+							System.out.println(producedRecord);
+							kafkaProducer
+								.send(producedRecord);		
+						} catch(JsonProcessingException e) {
+							e.printStackTrace();
+						}
 						/** end 3.0 **/
 
 						synchronized (jResult) {

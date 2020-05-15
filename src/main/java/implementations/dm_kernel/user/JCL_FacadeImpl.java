@@ -34,9 +34,6 @@ import io.protostuff.LinkedBuffer;
 import io.protostuff.ProtobufIOUtil;
 import io.protostuff.Schema;
 import io.protostuff.runtime.RuntimeSchema;
-import io.vertx.core.Vertx;
-import io.vertx.kafka.client.producer.KafkaProducer;
-import io.vertx.kafka.client.producer.KafkaProducerRecord;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -85,7 +82,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 /** 3.0 begin **/
-
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -172,7 +169,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
 			StringSerializer.class.getName());
 
-//		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<>(producerProperties);
+		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<String, String>(producerProperties);
 		
 		this.localMemory = LocalMemory.getInstance();
 		
@@ -1244,60 +1241,27 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			.configure(SerializationFeature.INDENT_OUTPUT, true)
 			.setSerializationInclusion(JsonInclude.Include.NON_NULL);
 		
-//		ProducerRecord<String, String> producedRecord;
-//		
-//		Properties topicProperties = new Properties();
-//		
-//		topicProperties.put("bootstrap.servers", this.bootstrapServers);
-//		topicProperties.put("topic.name", key.toString());
-//		topicProperties.put("topic.partitions", "1");
-//		topicProperties.put("topic.replication.factor", "1");
-//		
-//		new JCLTopic().createTopic(topicProperties);
+		ProducerRecord<String, String> producedRecord;
+		
+		if(!this.containsGlobalVar(key)) {
+			Properties topicProperties = new Properties();
+			
+			topicProperties.put("bootstrap.servers", this.bootstrapServers);
+			topicProperties.put("topic.name", key.toString());
+			topicProperties.put("topic.partitions", "1");
+			topicProperties.put("topic.replication.factor", "1");
+			
+			new JCLTopic().createTopic(topicProperties);
+		}
 		
 		try {
-			Properties producerProperties = new Properties();
-			
-			producerProperties.put(
-				ProducerConfig.CLIENT_ID_CONFIG, 
-				"jcl-client");
-			producerProperties.put(
-				ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-				"localhost" + ":" + "9092");
-			producerProperties.put(
-				ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, 
-				StringSerializer.class.getName());
-			producerProperties.put(
-				ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
-				StringSerializer.class.getName());
-			
-			Map<String, String> config = new HashMap<>();
-			
-			config.put("bootstrap.servers", "localhost:9092");
-			config.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-			config.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-
-			// use producer for interacting with Apache Kafka
-			KafkaProducer<String, String> producer = KafkaProducer.create(
-				Vertx.vertx(), 
-				config
+			producedRecord = new ProducerRecord<>(
+				key.toString(),
+			    objectMapper.writeValueAsString(instance)
 			);
-			
-			KafkaProducerRecord<String, String> record = KafkaProducerRecord.create(
-				key.toString(), 
-				objectMapper.writeValueAsString(instance)
-			);
-			
-			producer.write(record);
-
-//			producedRecord = new ProducerRecord<>(
-//				key.toString(),
-//			    objectMapper.writeValueAsString(instance)
-//			);
-//		
-//			JCL_FacadeImpl.kafkaProducer
-//				.send(producedRecord);
-			
+		
+			JCL_FacadeImpl.kafkaProducer
+				.send(producedRecord);		
 		} catch(JsonProcessingException e) {
 			e.printStackTrace();
 			

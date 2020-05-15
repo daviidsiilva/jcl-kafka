@@ -716,9 +716,15 @@ public class JCL_FacadeImpl implements JCL_facade {
 		
 		private static GenericResource<JCL_task> resource;
 		private static Map<Object, Object> localMemory;
-		private Long offset = 0L;
+		private KafkaConsumerRunner consumerRunner;
 		
-		public Holder(){ }
+		public Holder(){
+			Holder.localMemory = LocalMemory.getInstance();
+			
+			consumerRunner = new KafkaConsumerRunner(localMemory);
+			
+			consumerRunner.start();
+		}
 		
 		//Lock and get result
 		protected JCL_result getResultBlocking(Long ID) {
@@ -797,15 +803,13 @@ public class JCL_FacadeImpl implements JCL_facade {
 			Long id = new Long(ID);
 			
 			try {
-				Holder.localMemory = LocalMemory.getInstance();
-				
 				while (!localMemory.containsKey(id.toString())) {
-					KafkaConsumerRunner consumerRunner = new KafkaConsumerRunner(localMemory);
-					
-					consumerRunner.start();
-					
+					System.out.println(localMemory);
 					synchronized (consumerRunner) {
-						consumerRunner.wait();						
+						System.out.println(1);
+						System.out.println("!wait");
+						consumerRunner.wait();
+						System.out.println(2);
 					}
 				}
 				

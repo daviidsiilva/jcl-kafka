@@ -1,19 +1,21 @@
 package commom;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
-
-import io.vertx.core.Vertx;
-import io.vertx.kafka.client.consumer.KafkaConsumer;
-
 
 public class KafkaConsumerRunner extends Thread {
 	/** 3.0 begin **/
+	AtomicBoolean stop = new AtomicBoolean(false);
+	KafkaConsumer<String, String> consumer;
+	
 	private Map<Object, Object> localMemory;
 	
 	public KafkaConsumerRunner(Map<Object, Object> localMemory) {
@@ -22,11 +24,10 @@ public class KafkaConsumerRunner extends Thread {
 
 	@Override
 	public void run() {
-		Vertx vertx = Vertx.vertx();
 		Properties consumerProperties = new Properties();
 
 		consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-			"localhost:9092");
+			"localhost" + ":" + "9092");
 		consumerProperties.put(
 			ConsumerConfig.CLIENT_ID_CONFIG, 
 			"jcl-client");
@@ -38,34 +39,48 @@ public class KafkaConsumerRunner extends Thread {
 			StringDeserializer.class.getName());
 		consumerProperties.put(
 			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
-			ByteArrayDeserializer.class.getName());
+			StringDeserializer.class.getName());
 		consumerProperties.put(
 			ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, 
 			"earliest");
 		
-		KafkaConsumer<String, String> consumer = KafkaConsumer.create(
-			vertx, 
+		consumer =  new KafkaConsumer<>(
 			consumerProperties
 		);
 		
 		try {
-			consumer.subscribe(Pattern.compile("."));
+			consumer.subscribe(
+				Pattern.compile(
+					"^[a-zA-Z0-9]+$"
+				)
+			);
 			
-			consumer.handler(record -> {
-				System.out.println(record);
-				
-				synchronized(this) {
-					this.localMemory.put(
+			ConsumerRecords<String, String> records = consumer.poll(Duration.ofNanos(Long.MAX_VALUE));			
+			
+//			while(!stop.get()) {
+				records.forEach(record -> {
+					System.out.println(record);
+					synchronized(this) {
+						this.localMemory.put(
 							record.topic(), 
 							record.value()
-							);
-					
-					this.notifyAll();
-				}
-			});
+						);
+						
+						this.notify();
+						System.out.println("notified!");
+						System.out.println(this);
+					}
+				});
+//			}
 		} finally {
 			consumer.close();
 		}
+	}
+	
+	public void shutdown() {
+		stop.set(true);
+		
+		consumer.wakeup();
 	}
 	/** 3.0 end **/
 }
