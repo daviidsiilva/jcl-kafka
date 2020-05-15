@@ -34,6 +34,9 @@ import io.protostuff.LinkedBuffer;
 import io.protostuff.ProtobufIOUtil;
 import io.protostuff.Schema;
 import io.protostuff.runtime.RuntimeSchema;
+import io.vertx.core.Vertx;
+import io.vertx.kafka.client.producer.KafkaProducer;
+import io.vertx.kafka.client.producer.KafkaProducerRecord;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -82,7 +85,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 /** 3.0 begin **/
-import org.apache.kafka.clients.producer.KafkaProducer;
+
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -138,6 +141,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private static Producer<String, String> kafkaProducer;
 	private Map<Object, Object> localMemory;
 	
+	private KafkaConsumerRunner consumerRunner;
+	
 	private static final String ACQUIRED = "-1";
 	private static final String RELEASED = "-2";
 	private Long offset;
@@ -153,6 +158,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		this.offset = 0L;
 		
 		Properties producerProperties = new Properties();
+		
 		producerProperties.put(
 			ProducerConfig.CLIENT_ID_CONFIG, 
 			"jcl-client");
@@ -165,11 +171,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		producerProperties.put(
 			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
 			StringSerializer.class.getName());
-		
-		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<>(producerProperties);
+
+//		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<>(producerProperties);
 		
 		this.localMemory = LocalMemory.getInstance();
 		
+		this.consumerRunner = new KafkaConsumerRunner(localMemory);
+		
+		this.consumerRunner.start();
 		/** 3.0 end **/
 		
 		try {
@@ -1112,7 +1121,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 	}
 
-
 	@Override
 	public List<JCL_result> getAllResultUnblocking(List<Future<JCL_result>> ID) {
 		//Vars
@@ -1236,25 +1244,59 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			.configure(SerializationFeature.INDENT_OUTPUT, true)
 			.setSerializationInclusion(JsonInclude.Include.NON_NULL);
 		
-		ProducerRecord<String, String> producedRecord;
+//		ProducerRecord<String, String> producedRecord;
+//		
+//		Properties topicProperties = new Properties();
+//		
+//		topicProperties.put("bootstrap.servers", this.bootstrapServers);
+//		topicProperties.put("topic.name", key.toString());
+//		topicProperties.put("topic.partitions", "1");
+//		topicProperties.put("topic.replication.factor", "1");
+//		
+//		new JCLTopic().createTopic(topicProperties);
 		
-		Properties topicProperties = new Properties();
-		
-		topicProperties.put("bootstrap.servers", this.bootstrapServers);
-		topicProperties.put("topic.name", key.toString());
-		topicProperties.put("topic.partitions", "1");
-		topicProperties.put("topic.replication.factor", "1");
-		
-		new JCLTopic().createTopic(topicProperties);
-		
-		try {			
-			producedRecord = new ProducerRecord<>(
-				key.toString(),
-			    objectMapper.writeValueAsString(instance)
+		try {
+			Properties producerProperties = new Properties();
+			
+			producerProperties.put(
+				ProducerConfig.CLIENT_ID_CONFIG, 
+				"jcl-client");
+			producerProperties.put(
+				ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+				"localhost" + ":" + "9092");
+			producerProperties.put(
+				ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, 
+				StringSerializer.class.getName());
+			producerProperties.put(
+				ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
+				StringSerializer.class.getName());
+			
+			Map<String, String> config = new HashMap<>();
+			
+			config.put("bootstrap.servers", "localhost:9092");
+			config.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+			config.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+
+			// use producer for interacting with Apache Kafka
+			KafkaProducer<String, String> producer = KafkaProducer.create(
+				Vertx.vertx(), 
+				config
 			);
-		
-			JCL_FacadeImpl.kafkaProducer
-				.send(producedRecord);
+			
+			KafkaProducerRecord<String, String> record = KafkaProducerRecord.create(
+				key.toString(), 
+				objectMapper.writeValueAsString(instance)
+			);
+			
+			producer.write(record);
+
+//			producedRecord = new ProducerRecord<>(
+//				key.toString(),
+//			    objectMapper.writeValueAsString(instance)
+//			);
+//		
+//			JCL_FacadeImpl.kafkaProducer
+//				.send(producedRecord);
 			
 		} catch(JsonProcessingException e) {
 			e.printStackTrace();
@@ -1423,7 +1465,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 	}
 
-
 	//Use on JCLHashMap put method
 	protected static Object instantiateGlobalVarAndReturn(Object key, Object instance){
 		// TODO Auto-generated method stub
@@ -1453,7 +1494,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			lock.readLock().unlock();
 		}
 	}
-
 
 	@Override
 	public Future<Boolean> instantiateGlobalVarAsy(Object key,String nickName,
@@ -1712,14 +1752,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	@Override
 	public JCL_result getValue(Object key) {
+//		System.out.println("public JCL_result getValue(Object " + key + " )");
 		/** begin 3.0 **/
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
 		try {
 			if(!this.localMemory.containsKey(key)) {
-				KafkaConsumerRunner consumerRunner = new KafkaConsumerRunner(localMemory, key);
-				
-				consumerRunner.run();
+				synchronized (this.consumerRunner) {	
+					this.consumerRunner.wait();
+				}
 			}
 			
 		} catch (Exception e) {
@@ -1863,7 +1904,32 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean containsGlobalVar(Object key) {
-		return this.localMemory.containsKey(key);
+		Properties prop = new Properties();
+		boolean topicExists = false;
+		
+		prop.setProperty("bootstrap.servers", this.bootstrapServers);
+		
+		try (AdminClient admin = AdminClient.create(prop)) {
+			topicExists = admin.listTopics()
+				.names()
+				.get()
+				.stream()
+				.anyMatch(
+					topicName -> topicName.equalsIgnoreCase(
+						key.toString()
+					)
+				);
+
+			return topicExists;
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+
+			return false;
+		} catch (ExecutionException e) {
+			e.printStackTrace();
+
+			return false;
+		}
 	}
 
 	@Override
@@ -2139,6 +2205,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public static JCL_facade getInstanceLambari(){
 		return Holder.getInstanceLambari();
 	}
+	
 	public static class Holder extends implementations.sm_kernel.JCL_FacadeImpl.Holder{
 
 		protected static String ServerIP(){
@@ -2492,7 +2559,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 			return t;
 		}
-
 
 		protected Object getResultBlocking(Future<JCL_result> t){
 			try {

@@ -31,6 +31,7 @@ import java.util.concurrent.Future;
 
 
 import commom.Constants;
+import commom.JCL_resultImpl;
 
 
 
@@ -74,6 +75,8 @@ public class JCLHashMapPacu<K,V>
      */
     private boolean regClass = false; 
 
+    private int size;
+    
     /**
      * Constructs with HashMap name.
      */
@@ -95,8 +98,10 @@ public class JCLHashMapPacu<K,V>
     
     // internal utilities
     void init(){
-    	DEFAULT_JCL.instantiateGlobalVar(gvName, "MAP");
-    	DEFAULT_JCL.instantiateGlobalVar(gvName + ".size", 0);
+//    	if(!JCLHashMapPacu.DEFAULT_JCL.containsGlobalVar(gvName) && !JCLHashMapPacu.DEFAULT_JCL.containsGlobalVar(gvName + "size")) {
+    		JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(gvName, "");
+    		JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(gvName + "size", 0);
+//    	}
     }
 
     private String getKeyNameMapped(Object key) {
@@ -111,10 +116,13 @@ public class JCLHashMapPacu<K,V>
      * @return the number of key-value mappings in this map
      */
     public int size(){
+    	JCL_result jclResult = JCLHashMapPacu.DEFAULT_JCL.getValue(gvName + "size");
     	
-    	V size = this.get(gvName + ".size");
+    	Object size = Integer.parseInt(
+    		jclResult.getCorrectResult().toString()
+    	);
     	
-        return 0;
+        return Integer.parseInt(size.toString());
     }        
 
     /**
@@ -134,9 +142,9 @@ public class JCLHashMapPacu<K,V>
      * Returns the value to which the specified key is mapped.
      */
     public V get(Object key){
-    	String keyNameMapped = this.getKeyNameMapped(key);
+//    	String keyNameMapped = this.getKeyNameMapped(key);
     	
-    	JCL_result jclResult = JCLHashMapPacu.DEFAULT_JCL.getValue(keyNameMapped);
+    	JCL_result jclResult = JCLHashMapPacu.DEFAULT_JCL.getValue(key);
     	
     	V value = (V) jclResult.getCorrectResult();
     	
@@ -187,23 +195,22 @@ public class JCLHashMapPacu<K,V>
      */
     
     public V put(K key, V value){
-    	String keyNameMapped = this.getKeyNameMapped(key);
+//    	String keyNameMapped = this.getKeyNameMapped(key);
     	
     	JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(
-    		keyNameMapped, 
+    		key, 
     		value
     	);
     	
-    	int size = this.size();
-    	
-    	JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(
-    		keyNameMapped, 
-    		size + 1
-    	);
+//    	int size = this.size();
+//    	
+//    	JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(
+//    		gvName, 
+//    		size + 1
+//    	);
         
         return value;
     }
-    
     
     /**
      * Associates the specified value with the specified key in this map.

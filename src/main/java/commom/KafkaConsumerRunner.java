@@ -1,80 +1,71 @@
 package commom;
 
-import java.time.Duration;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.Properties;
+import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
-public class KafkaConsumerRunner implements Runnable {
+import io.vertx.core.Vertx;
+import io.vertx.kafka.client.consumer.KafkaConsumer;
 
-	private KafkaConsumer<Object, Object> consumer;
-	
+
+public class KafkaConsumerRunner extends Thread {
+	/** 3.0 begin **/
 	private Map<Object, Object> localMemory;
-	private Object key;
-
-	public KafkaConsumerRunner(Map<Object, Object> localMemory, Object key) {
+	
+	public KafkaConsumerRunner(Map<Object, Object> localMemory) {
 		this.localMemory = localMemory;
-		this.key = key;
 	}
 
 	@Override
 	public void run() {
-		/** 3.0 begin **/
+		Vertx vertx = Vertx.vertx();
 		Properties consumerProperties = new Properties();
 
+		consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
+			"localhost:9092");
 		consumerProperties.put(
-			ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-			"localhost:9092"
-		);
+			ConsumerConfig.CLIENT_ID_CONFIG, 
+			"jcl-client");
 		consumerProperties.put(
 			ConsumerConfig.GROUP_ID_CONFIG, 
-			"jcl-consumer-group"
-		);
+			"jcl-consumer-group");
 		consumerProperties.put(
 			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, 
-			StringDeserializer.class.getName()
-		);
+			StringDeserializer.class.getName());
 		consumerProperties.put(
 			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, 
-			StringDeserializer.class.getName()
+			ByteArrayDeserializer.class.getName());
+		consumerProperties.put(
+			ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, 
+			"earliest");
+		
+		KafkaConsumer<String, String> consumer = KafkaConsumer.create(
+			vertx, 
+			consumerProperties
 		);
-
-		this.consumer = new KafkaConsumer<>(consumerProperties);
-
+		
 		try {
-			consumer.subscribe(
-				Arrays.asList(
-					key.toString()
-				)
-			);
-
-			ConsumerRecords<Object, Object> consumedRecords = this.consumer
-				.poll(Duration.ofNanos(Long.MAX_VALUE));
-
-			synchronized(this.localMemory) {
-				consumedRecords.forEach(
-					(record) -> {
-						
-						this.localMemory.put(
+			consumer.subscribe(Pattern.compile("."));
+			
+			consumer.handler(record -> {
+				System.out.println(record);
+				
+				synchronized(this) {
+					this.localMemory.put(
 							record.topic(), 
 							record.value()
-						);
-					}
-				);
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
+							);
+					
+					this.notifyAll();
+				}
+			});
+		} finally {
+			consumer.close();
 		}
-		/** 3.0 end **/
 	}
-
-	public void shutdown() {
-		consumer.wakeup();
-		consumer.close();
-	}
+	/** 3.0 end **/
 }

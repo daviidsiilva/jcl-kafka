@@ -13,7 +13,7 @@ import interfaces.kernel.JCL_result;
 
 
 //a developer application just to test JCL 
-public class appl1 {
+public class appl3 {
 
 	public static void main(String[] args) {
 		new appl1();
@@ -24,7 +24,7 @@ public class appl1 {
 //		new appl1(); 
 //	}
 	
-	public appl1(){
+	public appl3(){
 		
 		JCL_facade jcl = JCL_FacadeImpl.getInstance();
 		Boolean b = jcl.register(UserServices.class, "UserServices");

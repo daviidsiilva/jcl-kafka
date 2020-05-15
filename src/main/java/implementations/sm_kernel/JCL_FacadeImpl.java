@@ -800,10 +800,13 @@ public class JCL_FacadeImpl implements JCL_facade {
 				Holder.localMemory = LocalMemory.getInstance();
 				
 				while (!localMemory.containsKey(id.toString())) {
-					KafkaConsumerRunner consumerRunner = new KafkaConsumerRunner(localMemory, id);
+					KafkaConsumerRunner consumerRunner = new KafkaConsumerRunner(localMemory);
 					
-					consumerRunner.run();
-					consumerRunner.shutdown();
+					consumerRunner.start();
+					
+					synchronized (consumerRunner) {
+						consumerRunner.wait();						
+					}
 				}
 				
 				jclr.setCorrectResult(
