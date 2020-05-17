@@ -4,16 +4,18 @@ package commom;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class Resource {
-	private Map<String, String> registers;
+import interfaces.kernel.JCL_result;
+
+public class JCLResultResource {
+	private Map<String, JCL_result> registers;
 	protected boolean finished;
 		
-	public Resource(){
-		this.registers = new ConcurrentHashMap<String, String>();
+	public JCLResultResource(){
+		this.registers = new ConcurrentHashMap<String, JCL_result>();
 		this.finished = false;		
 	}
 		
-	public synchronized void create(String key, String value){
+	public synchronized void create(String key, JCL_result value){
 		this.registers.put(key, value);
 		wakeup();
 	}
@@ -22,7 +24,7 @@ public class Resource {
 		this.notify();
 	}
 							
-	public synchronized String read(String key) throws Exception{
+	public synchronized JCL_result read(String key) throws Exception{
 		if(!this.registers.isEmpty())
 			return this.registers.get(key);
 		else {

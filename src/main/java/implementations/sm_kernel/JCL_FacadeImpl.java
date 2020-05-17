@@ -30,10 +30,12 @@ import java.util.concurrent.atomic.AtomicLong;
 import commom.Constants;
 import commom.GenericConsumer;
 import commom.GenericResource;
+import commom.JCLResultResource;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
 import commom.KafkaConsumerRunner;
 import commom.LocalMemory;
+import commom.Resource;
 
 public class JCL_FacadeImpl implements JCL_facade {
 	
@@ -351,6 +353,7 @@ public class JCL_FacadeImpl implements JCL_facade {
 	//Create global Var
 	@Override
 	public boolean instantiateGlobalVar(Object key, Object instance) {
+		System.out.println("B Lamb");
 		try{
 			//exec on orb
 			return orb.instantiateGlobalVar(key, instance);
@@ -710,21 +713,18 @@ public class JCL_FacadeImpl implements JCL_facade {
 	
 	public static JCL_facade getInstance(){
 		return Holder.getInstance();
+	}
+	
+	public static JCL_facade getInstance(JCLResultResource localResourceExecuteParam){
+		return Holder.getInstance(localResourceExecuteParam);
 	}	
 	
 	public static class Holder{
 		
 		private static GenericResource<JCL_task> resource;
-		private static Map<Object, Object> localMemory;
-		private KafkaConsumerRunner consumerRunner;
+		private static JCLResultResource localResourceExecute;
 		
-		public Holder(){
-			Holder.localMemory = LocalMemory.getInstance();
-			
-			consumerRunner = new KafkaConsumerRunner(localMemory);
-			
-			consumerRunner.start();
-		}
+		public Holder(){}
 		
 		//Lock and get result
 		protected JCL_result getResultBlocking(Long ID) {
@@ -734,7 +734,9 @@ public class JCL_FacadeImpl implements JCL_facade {
 			try {
 				join(ID);
 				
-				kafkaReturn = results.get(ID);
+				kafkaReturn = localResourceExecute.read(
+					ID.toString()
+				);
 			} catch(Exception e) {
 				System.err
 					.println("problem in JCL facade getResultBlocking(Long ID)");
@@ -797,34 +799,17 @@ public class JCL_FacadeImpl implements JCL_facade {
 		}
 		
 		//Wait
-		private void join(long ID) {
+		private void join(Long ID) {
 			/** begin 3.0 **/
-			JCL_result jclr = new JCL_resultImpl();
-			Long id = new Long(ID);
-			
 			try {
-				while (!localMemory.containsKey(id.toString())) {
-					System.out.println(localMemory);
-					synchronized (consumerRunner) {
-						System.out.println(1);
-						System.out.println("!wait");
-						consumerRunner.wait();
-						System.out.println(2);
-					}
+				if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
+					while ((localResourceExecute.read(ID.toString())) == null);
 				}
-				
-				jclr.setCorrectResult(
-					localMemory.get(
-						id.toString()
-					)
-				);
-				/** end 3.0 **/
-				
 			} catch (Exception e){
-				System.err.println("problem in JCL facade join ");
-				System.err.println("Contains Key " + ID + " result: " + results.containsKey(ID));
+				System.err.println("problem in JCL facade join");
 				e.printStackTrace();
-			}		
+			}
+			/** end 3.0 **/
 		}
 		
 		protected static JCL_facade getInstance(){
@@ -843,7 +828,17 @@ public class JCL_FacadeImpl implements JCL_facade {
 			}
 			
 			return instancePacu;
-		} 
+		}
+		
+		protected static JCL_facade getInstance(JCLResultResource localResourceExecuteParam){
+			localResourceExecute = localResourceExecuteParam;
+			
+			if (instance == null){
+				resource = new GenericResource<JCL_task>();
+				instance = new JCL_FacadeImpl(false,resource);
+			}			
+			return instance;
+		}
 		
 		protected boolean updateTicketH(long ticket,Object result){
 			return updateTicket(ticket,result);	

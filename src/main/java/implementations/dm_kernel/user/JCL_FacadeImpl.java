@@ -11,7 +11,6 @@ import implementations.dm_kernel.MessageListGlobalVarImpl;
 import implementations.dm_kernel.MessageListTaskImpl;
 import implementations.dm_kernel.MessageMetadataImpl;
 import implementations.dm_kernel.MessageRegisterImpl;
-import implementations.dm_kernel.SharedResourceConsumerThread;
 import implementations.dm_kernel.SimpleServer;
 import implementations.dm_kernel.server.RoundRobin;
 import implementations.util.ObjectWrap;
@@ -41,19 +40,15 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.time.Duration;
 
 import implementations.util.ByteBuffer;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -72,25 +67,12 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.CreateTopicsResult;
-import org.apache.kafka.clients.admin.DeleteTopicsResult;
-import org.apache.kafka.clients.admin.KafkaAdminClient;
-import org.apache.kafka.clients.admin.ListTopicsResult;
-import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 /** 3.0 begin **/
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.KafkaFuture;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.kafka.common.utils.Time;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -100,10 +82,13 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 
 import javassist.ClassPool;
 import javassist.CtClass;
+import commom.JCLResultResource;
+import commom.JCLResultSerializer;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
 import commom.KafkaConsumerRunner;
 import commom.LocalMemory;
+import commom.Resource;
 
 public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Holder implements JCL_facade{
 
@@ -135,8 +120,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public UUID userID;
 	private String bootstrapServers = "localhost:9092";
 	
-	private static Producer<String, String> kafkaProducer;
+	private static Producer<String, JCL_result> kafkaProducer;
 	private Map<Object, Object> localMemory;
+	private static JCLResultResource localResourceGlobalVar;
+	private static JCLResultResource localResourceExecute;
+	private static JCLResultResource localResourceMap;
 	
 	private KafkaConsumerRunner consumerRunner;
 	
@@ -169,11 +157,23 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, 
 			StringSerializer.class.getName());
 
-		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<String, String>(producerProperties);
+		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<>(
+			producerProperties,
+			new StringSerializer(),
+			new JCLResultSerializer()
+		);
 		
 		this.localMemory = LocalMemory.getInstance();
 		
-		this.consumerRunner = new KafkaConsumerRunner(localMemory);
+		localResourceGlobalVar = new JCLResultResource();
+		localResourceExecute = new JCLResultResource();
+		localResourceMap = new JCLResultResource();
+		
+		this.consumerRunner = new KafkaConsumerRunner(
+			localResourceGlobalVar, 
+			localResourceExecute, 
+			localResourceMap
+		);
 		
 		this.consumerRunner.start();
 		/** 3.0 end **/
@@ -196,7 +196,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			this.port = Integer.parseInt(properties.getProperty("simpleServerPort"));
 			jars = new ConcurrentHashMap<String, JCL_message_register>();			
 			jarsSlaves = new ConcurrentHashMap<String,List<String>>();			
-			jcl = super.getInstance();
+			
+			jcl = super.getInstance(localResourceExecute);
 
 			//config connection			
 			ConnectorImpl.timeout = timeOut;			
@@ -417,7 +418,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 			Object[] argsLam = {serverAdd, String.valueOf(serverPort),null,"0",msg};
 			Future<JCL_result> t = jcl.execute("JCL_FacadeImplLamb", "register", argsLam);
-
+			
 			if(((Boolean) t.get().getCorrectResult()).booleanValue()){
 				jars.put(classToBeExecuted, msg);
 				jarsSlaves.put(classToBeExecuted, new ArrayList<String>());	
@@ -500,7 +501,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 						objectNickname
 					};
 					Future<JCL_result> ticket = jcl.execute("JCL_FacadeImplLamb", "registerByServer", argsLam);
-
+					
 					Map<String, String> hostPort = (Map<String, String>) ticket.get().getCorrectResult();
 
 					if(hostPort.size()==0){
@@ -1184,7 +1185,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	@Override
 	public boolean instantiateGlobalVar(Object key,String nickName,
 			File[] jar, Object[] defaultVarValue) {
-		
 		lock.readLock().lock();
 		try {
 			//Get Host
@@ -1234,14 +1234,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	@Override
-	synchronized public boolean instantiateGlobalVar(Object key, Object instance){
-//		System.out.println("key: " + key + " instance: " + instance);
+	synchronized public boolean instantiateGlobalVar(Object key, Object instance) {
 		/** begin 3.0 **/
-		ObjectMapper objectMapper = new ObjectMapper()
-			.configure(SerializationFeature.INDENT_OUTPUT, true)
-			.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-		
-		ProducerRecord<String, String> producedRecord;
+		ProducerRecord<String, JCL_result> producedRecord;
 		
 		if(!this.containsGlobalVar(key)) {
 			Properties topicProperties = new Properties();
@@ -1254,19 +1249,18 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			new JCLTopic().createTopic(topicProperties);
 		}
 		
-		try {
-			producedRecord = new ProducerRecord<>(
-				key.toString(),
-			    objectMapper.writeValueAsString(instance)
-			);
+		JCL_result jclResultInstance = new JCL_resultImpl();
 		
-			JCL_FacadeImpl.kafkaProducer
-				.send(producedRecord);		
-		} catch(JsonProcessingException e) {
-			e.printStackTrace();
-			
-			return false;
-		}
+		jclResultInstance.setCorrectResult(instance);
+		
+		producedRecord = new ProducerRecord<>(
+			key.toString(),
+			"gv",
+		    jclResultInstance
+		);
+
+		JCL_FacadeImpl.kafkaProducer
+			.send(producedRecord);
 		
 		return true;
 		/** end 3.0 **/
@@ -1274,7 +1268,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	//Use on JCLHashMap to inst bins values
 	protected static boolean instantiateGlobalVar(Set<Entry<?,?>> set, String gvname){
-		System.out.println(set);
 		/** begin 3.0 **/
 //		try {
 //			for(Entry<?,?> ent : set) {
@@ -1695,7 +1688,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			);
 			
 			this.instantiateGlobalVar(
-				lockKey, 
+				lockKey,  
 				RELEASED
 			);
 			
@@ -1721,22 +1714,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
 		try {
-			if(!this.localMemory.containsKey(key)) {
-				synchronized (this.consumerRunner) {	
-					this.consumerRunner.wait();
-				}
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				
+				while ((kafkaReturn = localResourceGlobalVar.read(key.toString())) == null);
 			}
-			
 		} catch (Exception e) {
 			e.printStackTrace();
 			kafkaReturn.setErrorResult(e);
 		}
-		
-		kafkaReturn.setCorrectResult(
-			this.localMemory.get(
-				key
-			)
-		);
 		
 		return kafkaReturn;
 		/** end 3.0 **/
@@ -1823,7 +1808,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	@Override
 	public void destroy() {
 		try {
-
+			this.consumerRunner.shutdown();
+			
 			scheduler.shutdown();
 
 			if (simpleSever!=null){
