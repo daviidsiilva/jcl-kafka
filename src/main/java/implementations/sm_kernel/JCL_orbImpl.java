@@ -25,18 +25,11 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.primitives.Primitives;
 
-import commom.JCLResultResource;
 import commom.JCLResultSerializer;
-import commom.JCL_resultImpl;
 import implementations.dm_kernel.JCLTopic;
 import javassist.ClassClassPath;
 import javassist.ClassPool;
@@ -92,10 +85,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	@Override
 	public void execute(JCL_task task) {
 		/** begin 3.0 **/
-		ObjectMapper objectMapper = new ObjectMapper()
-			.configure(SerializationFeature.INDENT_OUTPUT, true)
-			.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-		
 		ProducerRecord<String, JCL_result> producedRecord;
 		/** end 3.0 **/
 		
@@ -112,6 +101,8 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 					para = task.getMethodParameters().length;
 					
 				int type = cache2.get(task.getObjectName() + ":" + task.getObjectMethod() + ":" + para);
+				System.out.println("METODO -> " + task.getObjectName() + ":" + task.getObjectMethod() + ":" + para);
+				System.out.println("task.getTaskID() -> " + task.getTaskID());
 				task.setTaskTime(System.nanoTime());
 				Object result = instance.JCLExecPacu(type, task.getMethodParameters());
 				task.setTaskTime(System.nanoTime());
@@ -125,7 +116,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				} else {
 					jResult.setCorrectResult("no result");
 				}
-
+				
 				/** begin 3.0 **/
 				Properties topicProperties = new Properties();
 				
@@ -143,6 +134,8 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 					"ex",
 					jResult
 				);
+				
+				System.out.println("jResult -> " + jResult.getCorrectResult());
 				
 				kafkaProducer
 					.send(producedRecord);

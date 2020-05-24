@@ -51,4 +51,9 @@ public class JCLResultResource {
 		return this.finished;
 	}
 	
+	public JCL_result delete(String key) {
+		JCL_result removed = this.registers.remove(key);
+		wakeup();
+		return removed;
+	}
 }

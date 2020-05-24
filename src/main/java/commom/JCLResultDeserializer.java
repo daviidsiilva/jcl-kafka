@@ -1,11 +1,11 @@
 
 package commom;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
 
 import org.apache.kafka.common.serialization.Deserializer;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import interfaces.kernel.JCL_result;;
 
@@ -13,19 +13,15 @@ public class JCLResultDeserializer implements Deserializer<JCL_result> {
 
 	@Override
 	public JCL_result deserialize(String topic, byte[] data) {
-		ByteArrayInputStream in = new ByteArrayInputStream(data);
-	    ObjectInputStream is = null;
+	    ObjectMapper mapper = new ObjectMapper();
 	    JCL_result result = null;
 		
 	    try {
-			is = new ObjectInputStream(in);
-			result = (JCL_result) is.readObject();
- 
-		} catch (ClassNotFoundException | IOException e) {
+			result = mapper.readValue(new String(data, "utf-8"), JCL_resultImpl.class);
+		} catch (IOException e) {
 			e.printStackTrace();
 		}
 	    
 	    return result;
 	}
-	
 }

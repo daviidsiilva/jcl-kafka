@@ -3,7 +3,6 @@ package implementations.sm_kernel;
 import implementations.collections.JCLFuture;
 import implementations.collections.JCLPFuture;
 import implementations.collections.JCLSFuture;
-import implementations.dm_kernel.SharedResourceConsumerThread;
 import implementations.util.CoresAutodetect;
 import interfaces.kernel.JCL_facade;
 import interfaces.kernel.JCL_orb;
@@ -33,9 +32,6 @@ import commom.GenericResource;
 import commom.JCLResultResource;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
-import commom.KafkaConsumerRunner;
-import commom.LocalMemory;
-import commom.Resource;
 
 public class JCL_FacadeImpl implements JCL_facade {
 	

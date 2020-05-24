@@ -60,8 +60,8 @@ public class KafkaConsumerRunner extends Thread {
 			
 //			while(!stop.get()) {
 			records.forEach(record -> {
-				System.out.println(record);
-//				System.out.println("topic: " + record.topic() + ", key: " + record.key() + ", value: " + record.value());
+//				System.out.println(record);
+				System.out.println("topic: " + record.topic() + ", key: " + record.key() + ", value: " + record.value());
 				if(record.key() == null) {
 					
 					
