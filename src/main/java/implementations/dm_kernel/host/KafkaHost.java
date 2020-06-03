@@ -1,106 +1,542 @@
 package implementations.dm_kernel.host;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Locale;
-import java.util.Properties;
-import java.util.concurrent.CountDownLatch;
+import implementations.dm_kernel.ConnectorImpl;
+import implementations.dm_kernel.MessageMetadataImpl;
+import implementations.dm_kernel.Server;
+import implementations.dm_kernel.IoTuser.Board;
+import implementations.dm_kernel.server.MainServer;
+import implementations.sm_kernel.JCL_FacadeImpl;
+import implementations.sm_kernel.JCL_orbImpl;
+import implementations.sm_kernel.PacuResource;
+import implementations.util.CoresAutodetect;
+import implementations.util.DirCreation;
+import implementations.util.ServerDiscovery;
+import implementations.util.IoT.CryptographyUtils;
+import implementations.util.IoT.JCL_IoT_SensingModelRetriever;
+import interfaces.kernel.JCL_connector;
+import interfaces.kernel.JCL_message_control;
+import interfaces.kernel.JCL_message_get_host;
+import interfaces.kernel.JCL_message_metadata;
+import interfaces.kernel.JCL_result;
+import interfaces.kernel.JCL_task;
+import mraa.mraa;
 
-//Kafka imports
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.UnknownHostException;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
+import org.apache.kafka.streams.kstream.ForeachAction;
 import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.kstream.Materialized;
-import org.apache.kafka.streams.kstream.Produced;
-import org.apache.kafka.streams.state.KeyValueStore;
+import org.apache.kafka.streams.kstream.KTable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class KafkaHost extends MainHost{
+import commom.GenericConsumer;
+import commom.GenericResource;
+import commom.JCL_handler;
 
-	public KafkaHost(int port, String BoardID) throws IOException {
-		super(port, BoardID);
-		// TODO Auto-generated constructor stub
-	}
+public class KafkaHost extends Server{
+	private String hostPort;
+	private static String nic;
+	//	private String[] hostIp = new String[5];
+	Map<String,String> metaData;
+	static boolean twoStep = false;
+	private HashSet<String> TaskContain;
+	private static TrayIconJCL icon;
+	private Map<Long, JCL_result> results;
+	private ConcurrentHashMap<String, Set<Object>> JclHashMap;
+	GenericResource<JCL_task> rp;
+	private ConcurrentHashMap<Long,String> JCLTaskMap;
+	private AtomicInteger registerMsg;
+	ConcurrentMap<String,String[]> slaves;
+	List<String> slavesIDs;
+	private AtomicLong taskID;
+	protected String serverAdd;
+	protected int serverPort;
+	static int BoardType;
+	private JCL_FacadeImpl jcl;
 	
-	private Properties readPropertiesFile() {
+	public String JCLKAFKA = "JCLKafka";
+
+	/**
+	 * @param args
+	 */
+	public static void main(String[] args) {
+		// TODO Auto-generated method stub
+		// Read properties file.
 		Properties properties = new Properties();
 		try {
-		    properties.load(new FileInputStream("../jcl_conf/config.properties"));
-		} catch (IOException e) {
+			properties.load(new FileInputStream("../jcl_conf/config.properties"));
+		}catch (FileNotFoundException e){					
+			System.err.println("File not found (../jcl_conf/config.properties) !!!!!");
+			System.out.println("Create properties file ../jcl_conf/config.properties.");
+			try {
+				File file = new File("../jcl_conf/config.properties");
+				file.getParentFile().mkdirs(); // Will create parent directories if not exists
+				file.createNewFile();
+
+				OutputStream output = new FileOutputStream(file,false);
+
+				// set the properties value
+				properties.setProperty("distOrParell", "true");
+				properties.setProperty("serverMainPort", "6969");
+				properties.setProperty("superPeerMainPort", "6868");
+
+
+				properties.setProperty("routerMainPort", "7070");
+				properties.setProperty("serverMainAdd", "127.0.0.1");
+				properties.setProperty("hostPort", "5151");
+
+
+				properties.setProperty("nic", "");
+				properties.setProperty("simpleServerPort", "4949");
+				properties.setProperty("timeOut", "5000");
+
+				properties.setProperty("byteBuffer", "5242880");
+				properties.setProperty("routerLink", "5");
+				properties.setProperty("enablePBA", "false");
+
+				properties.setProperty("PBAsize", "50");
+				properties.setProperty("delta", "0");
+				properties.setProperty("PGTerm", "10");
+
+				properties.setProperty("twoStep", "false");
+				properties.setProperty("useCore", "100");
+				properties.setProperty("deviceID", "Host1");
+
+				properties.setProperty("enableDinamicUp", "false");
+				properties.setProperty("findServerTimeOut", "1000");
+				properties.setProperty("findHostTimeOut", "1000");
+
+				properties.setProperty("enableFaultTolerance", "false");
+				properties.setProperty("verbose", "true");
+				properties.setProperty("encryption", "false");
+
+				properties.setProperty("deviceType", "3");
+				properties.setProperty("mqttBrokerAdd", "127.0.0.1");
+				properties.setProperty("mqttBrokerPort", "1883");
+
+				//save properties to project root folder
+
+				properties.store(output, null);
+			} catch (IOException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
+		}catch (IOException e) {
+			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		return properties;
+
+		int hostPort = Integer.parseInt(properties.getProperty("hostPort"));
+		nic = properties.getProperty("nic");
+		twoStep = Boolean.parseBoolean(properties.getProperty("twoStep").trim());
+		//		int byteBuffer = Integer.parseInt(properties.getProperty("byteBuffer"));
+		String BoardID = properties.getProperty("deviceID");
+		BoardType = Integer.parseInt( properties.getProperty("deviceType"));
+		ConnectorImpl.encryption = Boolean.parseBoolean(properties.getProperty("encryption"));	
+
+		DirCreation.createDirs("../jcl_temp/");
+
+
+		if (BoardType >= 4){	// creates a thread to start sensing
+			Thread t = new Thread(new Board());
+			t.start();
+		}
+
+		try {
+
+			new KafkaHost(hostPort,BoardID);
+
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+
+	public KafkaHost(int port, String BoardID) throws IOException{
+		super(port);
+		this.hostPort = Integer.toString(port);
+		this.metaData = getNameIPPort();
+		if ( BoardType >= 4){
+			try{
+				this.metaData.put("DEVICE_PLATFORM", mraa.getPlatformName());	
+			}catch(Exception e){
+				this.metaData.put("DEVICE_PLATFORM", "Generic Host");
+			}
+
+		}else{
+			this.metaData.put("DEVICE_PLATFORM", "Generic Host");
+		}
+		this.metaData.put("DEVICE_TYPE",String.valueOf(BoardType));
+		this.metaData.put("DEVICE_ID",BoardID);
+		this.slavesIDs = new LinkedList<String>();
+		this.slaves = new ConcurrentHashMap<String, String[]>();
+		this.rp = new PacuResource<JCL_task>(this.slavesIDs, this.slaves, twoStep);
+		this.JCLTaskMap = new ConcurrentHashMap<Long,String>();
+		this.TaskContain = new HashSet<String>();
+		this.results =  new ConcurrentHashMap<Long, JCL_result>();
+		this.JclHashMap = new ConcurrentHashMap<String, Set<Object>>();
+		this.taskID = new AtomicLong();
+		this.jcl = (JCL_FacadeImpl)JCL_FacadeImpl.Holder.getInstancePacu(
+			rp, 
+			this.metaData.get("IP")
+		);
+		this.registerMsg = new AtomicInteger();
+		JCL_handler.setRegisterMsg(registerMsg);
+		JCL_orbImpl.setRegisterMsg(registerMsg);
+
+		try{
+			icon = new TrayIconJCL(this.metaData);
+		}catch(ExceptionInInitializerError e){
+			System.out.println("Unable to load tray icon");
+		}
+		this.begin();
 	}
 
 	@Override
 	protected void beforeListening() {
-		
-		Properties properties = this.readPropertiesFile();
-		
+		// Read properties file.
+		Properties properties = new Properties();
+		try {
+			properties.load(new FileInputStream("../jcl_conf/config.properties"));
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+
 		serverAdd = properties.getProperty("serverMainAdd");
 		serverPort = Integer.parseInt(properties.getProperty("superPeerMainPort"));
 
-		Thread kafkaRegister = new Thread() {
-			public void run() {
-				Properties kafkaProperties = new Properties();
-				
-				kafkaProperties.put(StreamsConfig.APPLICATION_ID_CONFIG, "streams-jcl");
-				kafkaProperties.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-				kafkaProperties.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
-				kafkaProperties.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
-				
-				final StreamsBuilder builder = new StreamsBuilder();
-				
-				KStream<String, String> source = builder.stream("streams-jcl-input");
-				
-				source.flatMapValues(value -> Arrays.asList(value.toLowerCase(Locale.getDefault()).split("\\W+")))
-					.groupBy((key, value) -> value)
-	                .count(Materialized.<String, Long, KeyValueStore<Bytes, byte[]>>as("store"))
-	                .toStream()
-	                .to("streams-jcl-output", Produced.with(Serdes.String(), Serdes.Long()));
+		Thread threadRegister = new Thread(){
+			public void run(){
+				JCL_connector controlConnector = new ConnectorImpl(false);
+				if(!controlConnector.connect(serverAdd, serverPort,null)){
+					serverPort = Integer.parseInt(properties.getProperty("serverMainPort"));
+					boolean connected = controlConnector.connect(serverAdd, serverPort,null);
+					if (!connected){
 
-				final Topology topology = builder.build();
+						String serverData[] = ServerDiscovery.discoverServer();
+						if (serverData != null){
+							serverAdd = serverData[0];
+							serverPort = Integer.parseInt(serverData[1]);
+							connected = controlConnector.connect(serverAdd, serverPort, null);		    						    				
 
-		        final KafkaStreams streams = new KafkaStreams(topology, properties);
+						} else if (BoardType < 4){
+							System.out.println("Starting JCL-Server.");
 
-		        final CountDownLatch latch = new CountDownLatch(1);
+							Thread thread = new Thread() {
+								public void run() {
+									MainServer.main(null);
+								}
+							};
+							thread.start();
 
-		        System.out.println(topology.describe());
+							long startTime = System.currentTimeMillis(); //fetch starting time
+							serverAdd = "127.0.0.1";
+							while((!controlConnector.connect(serverAdd, serverPort, null)) && (System.currentTimeMillis()-startTime)<1000);		    				
+						}		    			
+					}
+				}
+				JCL_message_metadata msg = new MessageMetadataImpl();
 
-		        Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook"){
-		            @Override
-		            public void run () {
-		                streams.close();
-		                latch.countDown();
-		            }
-		        });
-		        
-		        try {
-		            streams.start();
-		            latch.await();
-		        } catch (Throwable t) {
-		            System.exit(1);
-		        }
+				msg.setType(-1);				
+				msg.setMetadados(metaData);
+
+				boolean activateEncryption = false;
+				if (ConnectorImpl.encryption){
+					ConnectorImpl.encryption = false;
+					activateEncryption = true;
+				}
+
+				JCL_message_get_host msgr = (JCL_message_get_host)controlConnector.sendReceiveG(msg,null);				
+
+				if (activateEncryption)
+					ConnectorImpl.encryption = true;
+
+				if((msgr.getSlaves() != null)){	
+					slaves.putAll(msgr.getSlaves());
+					slavesIDs.addAll(msgr.getSlavesIDs());
+					CryptographyUtils.setClusterPassword(msgr.getMAC());
+
+					((PacuResource)rp).setHostIp(metaData);
+					rp.wakeup();
+
+					if (BoardType >= 4)
+						configureBoard();
+
+					System.out.println("HOST JCL is OK");					 			
+				}				
+				else System.err.println("HOST JCL/Kafka NOT STARTED");
+
+				ShutDownHook();
+				controlConnector.disconnect();
 			}
 		};
-		
+		threadRegister.start();
+	}
+
+	//	private String[] getNameIPPort(){
+	private Map<String,String> getNameIPPort(){
+		Map<String,String> IPPort = new HashMap<String,String>();
+		try {			
+			//InetAddress ip = InetAddress.getLocalHost();
+			InetAddress ip = getLocalHostLANAddress();
+			System.out.println("Current IP address : " + ip.getHostAddress());
+
+			NetworkInterface network = NetworkInterface.getByInetAddress(ip);
+
+			byte[] mac = network.getHardwareAddress();
+
+			System.out.print("Current MAC address : ");
+
+			StringBuilder sb = new StringBuilder(17);
+			for (int i = 0; i < mac.length; i++) {
+				sb.append(String.format("%02X%s", mac[i], (i < mac.length - 1) ? "-" : ""));		
+			}
+
+			if (sb.length()==0) sb.append(ip.getHostAddress());
+
+			System.out.println(sb.toString());
+			//	String[] result = {ip.getHostAddress(), hostPort, sb.toString(),Integer.toString(CoresAutodetect.cores)};
+
+			IPPort.put("IP", ip.getHostAddress());
+			IPPort.put("PORT", hostPort);
+			IPPort.put("MAC", sb.toString());
+			IPPort.put("CORE(S)", Integer.toString(CoresAutodetect.cores));
+
+			return IPPort;
+
+
+		} catch (Exception e) {
+
+			try {
+				InetAddress ip = InetAddress.getLocalHost();			
+				String sb = ip.getHostAddress();
+
+				byte[] mac = macConvert(sb);
+				StringBuilder sbS= new StringBuilder(17);
+				for (int i = 0; i < mac.length; i++) {
+					sbS.append(String.format("%02X%s", mac[i], (i < mac.length - 1) ? "-" : ""));		
+				}
+
+				//	String[] result = {sb, this.hostPort, sb, Integer.toString(CoresAutodetect.cores)};
+				IPPort.put("IP", sb);
+				IPPort.put("PORT", hostPort);
+				IPPort.put("MAC", sbS.toString());
+				IPPort.put("CORE(S)", Integer.toString(CoresAutodetect.cores));
+
+				return IPPort;
+			} catch (UnknownHostException e1) {
+				System.err.println("cannot collect host address");
+				return null;
+			}
+
+
+		}
+	}
+
+	public byte[] macConvert(String macAddress){
+
+		String[] macAddressParts = macAddress.split("-");
+		byte[] macAddressBytes = new byte[6];
+
+		if (macAddressParts.length == 6){
+			// convert hex string to byte values
+			for(int i=0; i<6; i++){
+				Integer hex = Integer.parseInt(macAddressParts[i], 16);
+				macAddressBytes[i] = hex.byteValue();
+			}
+
+		}else{
+			String[] ipAddressParts = macAddress.split("\\.");
+			for(int i=0; i<4; i++){
+				Integer integer = Integer.parseInt(ipAddressParts[i]);
+				macAddressBytes[i] = integer.byteValue();
+			}
+			Integer integer = 0;
+			macAddressBytes[4] =  integer.byteValue();
+			macAddressBytes[5] =  integer.byteValue();
+		}		
+		return macAddressBytes;
+	}
+
+	@Override
+	protected void duringListening() {
+		// TODO Auto-generated method stub		
+	}
+
+	@Override
+	public <K extends JCL_handler> GenericConsumer<K> createSocketConsumer(
+			GenericResource<K> r, AtomicBoolean kill){
+		// TODO Auto-generated method stub		
+
+		String hostID = this.metaData.get("MAC")+this.metaData.get("PORT"); 		
+		return new SocketConsumer<K>(r,kill,TaskContain,hostID,results,this.taskID,this.JclHashMap,this.rp,this.JCLTaskMap,this.jcl);
+	}
+
+	void ShutDownHook() {
+		Runtime.getRuntime().addShutdownHook(new Thread() {
+
+			@Override
+			public void run() {
+				try {
+
+
+					JCL_message_metadata msg = new MessageMetadataImpl();
+					msg.setType(-2);				
+					msg.setMetadados(metaData);
+
+
+					//	        JCL_message_control msg = new MessageControlImpl();
+					//			msg.setType(-2);
+					//		//	String[] hostIpN = Arrays.copyOf(hostIp, hostIp.length + 1);
+					//		//	hostIpN[hostIp.length] = 
+					//			msg.setRegisterData(hostIp);			
+
+					// Read properties file.
+					Properties properties = new Properties();
+					try {
+						properties.load(new FileInputStream("../jcl_conf/config.properties"));
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+					//			String serverAdd = properties.getProperty("serverMainAdd");
+					//			int serverPort = Integer.parseInt(properties.getProperty("serverMainPort"));
+					//			final int superPeerPort = Integer.parseInt(properties.getProperty("superPeerMainPort"));
+					//			boolean verbose = Boolean.parseBoolean(properties.getProperty("verbose"));
+					JCL_connector controlConnector = new ConnectorImpl(false);
+					if(controlConnector.connect(serverAdd, serverPort,null)){			
+						JCL_message_control msgr = (JCL_message_control) controlConnector.sendReceiveG(msg,null);
+						if(msgr.getRegisterData().length==1){	
+							System.out.println("HOST JCL WAS UNREGISTERED!");
+						}
+						else System.err.println("HOST JCL WAS NOT UNREGISTERED!");					
+						controlConnector.disconnect();			
+					}			
+					ConnectorImpl.closeSocketMap();
+				} 	    	
+				catch (Exception e) {
+					System.err.println("Erro in unregister host!");
+				}
+			}
+		});
+	}
+
+	private static InetAddress getLocalHostLANAddress() throws UnknownHostException {
 		try {
-			kafkaRegister.start();
-			System
-				.out
-				.println("HOST JCL/Kafka is OK");
-		} catch(Throwable t) {
-			System
-				.err
-				.println("HOST JCL/Kafka NOT STARTED");
-			System
-				.err
-				.println(t);
-			System.exit(1);
+			InetAddress candidateAddress = null;
+			// Iterate all NICs (network interface cards)...
+			for (Enumeration ifaces = NetworkInterface.getNetworkInterfaces(); ifaces.hasMoreElements();){
+				NetworkInterface iface = (NetworkInterface) ifaces.nextElement();
+
+				if (iface.getName().contains(nic)){
+					// Iterate all IP addresses assigned to each card...
+					for (Enumeration inetAddrs = iface.getInetAddresses(); inetAddrs.hasMoreElements();) {
+						InetAddress inetAddr = (InetAddress) inetAddrs.nextElement();
+						if (!inetAddr.isLoopbackAddress()) {
+
+							if (inetAddr.isSiteLocalAddress()) {
+								// Found non-loopback site-local address. Return it immediately...
+								return inetAddr;
+							}
+							else if (candidateAddress == null) {
+								// Found non-loopback address, but not necessarily site-local.
+								// Store it as a candidate to be returned if site-local address is not subsequently found...
+								candidateAddress = inetAddr;
+								// Note that we don't repeatedly assign non-loopback non-site-local addresses as candidates,
+								// only the first. For subsequent iterations, candidate will be non-null.
+							}
+						}
+					}
+				}
+			}
+			if (candidateAddress != null) {
+				// We did not find a site-local address, but we found some other non-loopback address.
+				// Server might have a non-site-local address assigned to its NIC (or it might be running
+				// IPv6 which deprecates the "site-local" concept).
+				// Return this non-loopback candidate address...
+				return candidateAddress;
+			}
+			// At this point, we did not find a non-loopback address.
+			// Fall back to returning whatever InetAddress.getLocalHost() returns...
+			InetAddress jdkSuppliedAddress = InetAddress.getLocalHost();
+			if (jdkSuppliedAddress == null) {
+				throw new UnknownHostException("The JDK InetAddress.getLocalHost() method unexpectedly returned null.");
+			}
+			return jdkSuppliedAddress;
+		}
+		catch (Exception e) {
+			UnknownHostException unknownHostException = new UnknownHostException("Failed to determine LAN address: " + e);
+			unknownHostException.initCause(e);
+			throw unknownHostException;
+		}
+	}
+
+	protected void configureBoard(){
+		try{
+			System.loadLibrary("mraajava");
+			Board.setBoardIP(this.metaData.get("IP"));
+			Board.setPort(this.metaData.get("PORT"));
+			Board.setMac(this.metaData.get("MAC"));
+			Board.setCore(this.metaData.get("CORE(S)"));		
+			Board.setDeviceType(this.metaData.get("DEVICE_TYPE"));
+			Board.setDeviceAlias(this.metaData.get("DEVICE_ID"));
+			Board.setServerIP(this.serverAdd);
+			Board.setServerPort(String.valueOf(this.serverPort));
+			Board.setStandBy(false);
+			System.out.println("mraa: " + mraa.getPlatformName());
+			Board.setSensingModel(JCL_IoT_SensingModelRetriever.getSensingModel(mraa.getPlatformName()));
+			Board.setPlatform(mraa.getPlatformName());
+			Board.restore();
+			Properties properties = new Properties();
+			try {
+				properties.load(new FileInputStream("../jcl_conf/config.properties"));
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+
+			if (properties.getProperty("allowUser") != null)
+				Board.setAllowUser(Boolean.valueOf(properties.getProperty("allowUser")));
+
+			if (properties.getProperty("mqttBrokerAdd")!=null && properties.getProperty("mqttBrokerPort") != null){
+				Board.setBrokerIP(properties.getProperty("mqttBrokerAdd"));
+				Board.setBrokerPort(properties.getProperty("mqttBrokerPort"));
+				Board.connectToBroker();
+			}
+
+			if (properties.getProperty("iotUseCore") != null){
+				Board.setIotCoreNumber(Integer.parseInt(properties.getProperty("iotUseCore")));
+			}
+			Board.createPool();
+
+		}catch(Exception e){
+			System.err.println("Can't config Host to sensing!!!");
 		}
 	}
 }

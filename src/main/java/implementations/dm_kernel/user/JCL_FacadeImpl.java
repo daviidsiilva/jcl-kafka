@@ -42,6 +42,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 
 import implementations.util.ByteBuffer;
+import implementations.util.JCLConfigProperties;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -58,7 +59,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -66,11 +66,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.apache.kafka.clients.admin.AdminClient;
 /** 3.0 begin **/
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 /** 3.0 end **/
@@ -82,6 +80,7 @@ import commom.JCLResultSerializer;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
 import commom.KafkaConsumerRunner;
+import commom.Constants;
 
 public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Holder implements JCL_facade{
 
@@ -111,57 +110,25 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	/** 3.0 begin **/
 	public UUID userID;
-	private String bootstrapServers = "localhost:9092";
 	
 	private static Producer<String, JCL_result> kafkaProducer;
 	
 	private static JCLResultResource localResourceGlobalVar;
 	private static JCLResultResource localResourceExecute;
-	private static JCLResultResource localResourceMap;
+	private static Map<String, JCLResultResource> localResourceMapContainer;
 	
 	private KafkaConsumerRunner consumerRunner;
 	
 	private static final String ACQUIRED = "-1";
 	private static final String RELEASED = "-2";
-	private Long offset;
 	/** 3.0 end **/
 	
 	protected JCL_FacadeImpl(Properties properties){
 		//Start seed rand GV
 		rand = new XORShiftRandom();
 		
-		/** 3.0 begin **/
-		this.userID = UUID.randomUUID();
 		
-		this.offset = 0L;
-		
-		Properties producerProperties = new Properties();
-		
-		producerProperties.put(
-			ProducerConfig.CLIENT_ID_CONFIG, 
-			"jcl-client");
-		producerProperties.put(
-			ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-			"localhost" + ":" + "9092");
-
-		JCL_FacadeImpl.kafkaProducer = new KafkaProducer<>(
-			producerProperties,
-			new StringSerializer(),
-			new JCLResultSerializer()
-		);
-		
-		localResourceGlobalVar = new JCLResultResource();
-		localResourceExecute = new JCLResultResource();
-		localResourceMap = new JCLResultResource();
-		
-		this.consumerRunner = new KafkaConsumerRunner(
-			localResourceGlobalVar, 
-			localResourceExecute, 
-			localResourceMap
-		);
-		
-		this.consumerRunner.start();
-		/** 3.0 end **/
+		initKafka();
 		
 		try {
 			//single pattern
@@ -182,7 +149,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			jars = new ConcurrentHashMap<String, JCL_message_register>();			
 			jarsSlaves = new ConcurrentHashMap<String,List<String>>();			
 			
-			jcl = super.getInstance(localResourceExecute);
+			jcl = super.getInstance();
 
 			//config connection			
 			ConnectorImpl.timeout = timeOut;			
@@ -269,6 +236,30 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 	}
 
+	private void initKafka() {
+		userID = UUID.randomUUID();
+		
+		Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
+
+		kafkaProducer = new KafkaProducer<>(
+			properties,
+			new StringSerializer(),
+			new JCLResultSerializer()
+		);
+		
+		localResourceGlobalVar = new JCLResultResource();
+		localResourceExecute = new JCLResultResource();
+		localResourceMapContainer = new ConcurrentHashMap<>();
+		
+		consumerRunner = new KafkaConsumerRunner(
+			localResourceGlobalVar, 
+			localResourceExecute, 
+			localResourceMapContainer
+		);
+		
+		consumerRunner.start();
+	}
+	
 	public void update(){
 		try{
 			//			Object[] argsLam = {};
@@ -460,15 +451,12 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	@Override
 	public Future<JCL_result> execute(String objectNickname,Object... args) {
 
-//		System.out.println(1);
 		try {
 			if (!JPF){
-//				System.out.println("if !JPF");
 				//Get host
 				String host = null,port = null,mac = null,portS=null;
 				
 				if (jars.containsKey(objectNickname)){
-//					System.out.println("jars.containsKey(objectNickname)");
 					// Get host
 					Map<String, String> hostPort = RoundRobin.getDevice();
 
@@ -529,7 +517,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					return ticket;								
 				}
 			} else{
-				System.out.println("else" + JPF);
 				//watch this method
 				watchExecMeth = false;
 
@@ -1221,18 +1208,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	synchronized public boolean instantiateGlobalVar(Object key, Object instance) {
-		/** begin 3.0 **/
 		ProducerRecord<String, JCL_result> producedRecord;
 		
 		if(!this.containsGlobalVar(key)) {
-			Properties topicProperties = new Properties();
+			Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 			
-			topicProperties.put("bootstrap.servers", this.bootstrapServers);
 			topicProperties.put("topic.name", key.toString());
-			topicProperties.put("topic.partitions", "1");
-			topicProperties.put("topic.replication.factor", "1");
 			
-			new JCLTopic().createTopic(topicProperties);
+			new JCLTopic().create(topicProperties);
 		}
 		
 		JCL_result jclResultInstance = new JCL_resultImpl();
@@ -1244,12 +1227,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			"gv",
 		    jclResultInstance
 		);
-
+		
 		JCL_FacadeImpl.kafkaProducer
 			.send(producedRecord);
 		
 		return true;
-		/** end 3.0 **/
 	}
 
 	//Use on JCLHashMap to inst bins values
@@ -1695,7 +1677,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	@Override
 	public JCL_result getValue(Object key) {
-//		System.out.println("public JCL_result getValue(Object " + key + " )");
 		/** begin 3.0 **/
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
@@ -1842,32 +1823,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean containsGlobalVar(Object key) {
-		Properties prop = new Properties();
-		boolean topicExists = false;
+		Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 		
-		prop.setProperty("bootstrap.servers", this.bootstrapServers);
+		boolean exists = new JCLTopic().exists(properties);
 		
-		try (AdminClient admin = AdminClient.create(prop)) {
-			topicExists = admin.listTopics()
-				.names()
-				.get()
-				.stream()
-				.anyMatch(
-					topicName -> topicName.equalsIgnoreCase(
-						key.toString()
-					)
-				);
-
-			return topicExists;
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-
-			return false;
-		} catch (ExecutionException e) {
-			e.printStackTrace();
-
-			return false;
-		}
+		return exists;
 	}
 
 	@Override
@@ -2060,7 +2020,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	//Get HashMap
 	public static <K, V> Map<K, V> GetHashMap(String gvName){
-		return new JCLHashMap<K, V>(gvName);
+		return new JCLHashMap<K, V>(gvName, localResourceMapContainer);
+//		return new JCLHashMap<K, V>(gvName);
 	}
 
 	//Get HashMap
@@ -2228,81 +2189,29 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				return getInstanceLambari();
 			}
 		}
-		
-//		protected synchronized static JCL_facade getInstance(JCLResultResource localResourceExecuteParam){
-//			localResourceExecute = localResourceExecuteParam;
-//
-//			Properties properties = new Properties();
-//			try {
-//				properties.load(new FileInputStream("../jcl_conf/config.properties"));
-//			}catch (FileNotFoundException e){					
-//				System.err.println("File not found (../jcl_conf/config.properties) !!!!!");
-//				System.out.println("Create properties file ../jcl_conf/config.properties.");
-//				try {
-//					File file = new File("../jcl_conf/config.properties");
-//					file.getParentFile().mkdirs(); // Will create parent directories if not exists
-//					file.createNewFile();
-//
-//					OutputStream output = new FileOutputStream(file,false);
-//
-//					// set the properties value
-//					properties.setProperty("distOrParell", "true");
-//					properties.setProperty("serverMainPort", "6969");
-//					properties.setProperty("superPeerMainPort", "6868");
-//
-//
-//					properties.setProperty("routerMainPort", "7070");
-//					properties.setProperty("serverMainAdd", "127.0.0.1");
-//					properties.setProperty("hostPort", "5151");
-//
-//
-//					properties.setProperty("nic", "");
-//					properties.setProperty("simpleServerPort", "4949");
-//					properties.setProperty("timeOut", "5000");
-//
-//					properties.setProperty("byteBuffer", "5242880");
-//					properties.setProperty("routerLink", "5");
-//					properties.setProperty("enablePBA", "false");
-//
-//					properties.setProperty("PBAsize", "50");
-//					properties.setProperty("delta", "0");
-//					properties.setProperty("PGTerm", "10");
-//
-//					properties.setProperty("twoStep", "false");
-//					properties.setProperty("useCore", "100");
-//					properties.setProperty("deviceID", "Host1");
-//
-//					properties.setProperty("enableDinamicUp", "false");
-//					properties.setProperty("findServerTimeOut", "1000");
-//					properties.setProperty("findHostTimeOut", "1000");
-//
-//					properties.setProperty("enableFaultTolerance", "false");
-//					properties.setProperty("verbose", "true");
-//					properties.setProperty("encryption", "false");
-//
-//					properties.setProperty("deviceType", "3");
-//					properties.setProperty("mqttBrokerAdd", "127.0.0.1");
-//					properties.setProperty("mqttBrokerPort", "1883");
-//
-//					//save properties to project root folder
-//
-//					properties.store(output, null);
-//				} catch (IOException e1) {
-//					// TODO Auto-generated catch block
-//					e1.printStackTrace();
-//				}
-//			}catch (IOException e) {
-//				// TODO Auto-generated catch block
-//				e.printStackTrace();
-//			}
-//
-//			//get type of Instance 
-//			if (Boolean.valueOf(properties.getProperty("distOrParell"))){
-//				return getInstancePacu(properties);
-//			}else{
-//				return getInstanceLambari();
+
+//		TOPico -> abacaxi {
+//			{
+//				value:  
 //			}
 //		}
+//		
+//		TOPico -> mapA {
+//			{
+//				key: header
+//				value: properties
+//			},
+//			{
+//				key: entry1
+//				value: antoin
+//			},
+//			{
+//				key: entryN
+//				value: antoin
+//			},
+//		}
+//		
+//		mapA.size() 
 		
 		protected synchronized static JCL_facade getInstancePacu(Properties properties){
 			//Pacu type
@@ -2314,20 +2223,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			return instance;
 		}
 
-//		protected synchronized static JCL_facade getInstancePacu(Properties properties, JCLResultResource localResourceExecute){
-//			//Pacu type
-//
-//			if (instance == null){
-//				instance = new JCL_FacadeImpl(properties, localResourceExecute);
-//			}	
-//
-//			return instance;
-//		}
-		
 		protected synchronized static JCL_facade getInstanceLambari(){
 			//Lambari type
 			if (jcl == null){
-				jcl = implementations.sm_kernel.JCL_FacadeImpl.getInstance(localResourceExecute);
+				jcl = implementations.sm_kernel.JCL_FacadeImpl.getInstance();
 			}			
 			return jcl;
 		}
@@ -2594,37 +2493,33 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			}
 		}
 		
-		private void join(String ID) {
-			/** begin 3.0 **/
-			try {
-				if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
-					while ((localResourceExecute.read(ID)) == null);
-				}
-			} catch (Exception e){
-				System.err.println("problem in JCL facade join");
-				e.printStackTrace();
-			}
-			/** end 3.0 **/
-		}
-		
 		protected JCL_result getResultBlocking(Long ID) {
-			System.out.println("ID -> " + ID);
+			/** begin 3.0 **/
+			JCL_result result; 
+			JCL_result resultF = new JCL_resultImpl();
+			Object[] resultConfig;
+			Object hostAddress, hostTaskId;
+			
 			try {
-
-				
-				JCL_result result, resultF;
 				
 				result = super.getResultBlocking(ID);
+				resultConfig = (Object[])result.getCorrectResult();
 				
-//				Object[] res = (Object[]) result.getCorrectResult();
+				hostAddress = resultConfig[1].toString().replace(".", "");
+				hostTaskId = resultConfig[0];
 				
-//				String args = ID + ":" + res[0] + ":" + res[1];
+				String finalTaskId = hostTaskId.toString() + hostAddress;  
 				
-				join(Long.toString(ID));
-				
-				resultF = localResourceExecute.read(Long.toString(ID));
-
-				System.out.println("resultF: " + resultF.getCorrectResult());
+				try {
+					if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
+						while ((resultF = localResourceExecute.read(finalTaskId)) == null);
+					}
+				} catch (Exception e){
+					System.err.println("problem in JCL facade join");
+					e.printStackTrace();
+					
+					resultF.setErrorResult(e);
+				}
 
 				return resultF;
 			} catch (Exception e) {
@@ -2638,7 +2533,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				return jclr;
 			}
 		}
-
+		/** end 3.0 **/
 	}
 
 	@Override

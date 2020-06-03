@@ -29,7 +29,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import commom.Constants;
 import commom.GenericConsumer;
 import commom.GenericResource;
-import commom.JCLResultResource;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
 
@@ -47,11 +46,31 @@ public class JCL_FacadeImpl implements JCL_facade {
 	private static JCL_facade instancePacu;
 	
 	//End global variables
-	
 	protected JCL_FacadeImpl(boolean type, GenericResource<JCL_task> re){
 		
 		if(type){
 			orb = JCL_orbImpl.getInstancePacu();
+		}else{
+			orb = JCL_orbImpl.getInstance();
+		}
+		
+		orb.setResults(results);
+		r = re;
+
+		try{			
+			System.err.println("machine with " + CoresAutodetect.cores + " cores");			
+			JCL_Crawler crawler = new JCL_Crawler(CoresAutodetect.cores,workers,killWorkers,r,orb);			
+			scheduler.scheduleAtFixedRate(crawler,0,1000,TimeUnit.MILLISECONDS);			
+		}catch ( Exception e ){
+			System.err.println("JCL facade constructor error");
+			e.printStackTrace();			
+		}
+	}
+	
+	protected JCL_FacadeImpl(boolean type, GenericResource<JCL_task> re, String hostAddress){
+
+		if(type){
+			orb = JCL_orbImpl.getInstancePacu(hostAddress);
 		}else{
 			orb = JCL_orbImpl.getInstance();
 		}
@@ -349,7 +368,6 @@ public class JCL_FacadeImpl implements JCL_facade {
 	//Create global Var
 	@Override
 	public boolean instantiateGlobalVar(Object key, Object instance) {
-		System.out.println("B Lamb");
 		try{
 			//exec on orb
 			return orb.instantiateGlobalVar(key, instance);
@@ -711,37 +729,26 @@ public class JCL_FacadeImpl implements JCL_facade {
 		return Holder.getInstance();
 	}
 	
-	public static JCL_facade getInstance(JCLResultResource localResourceExecuteParam){
-		return Holder.getInstance(localResourceExecuteParam);
-	}	
-	
 	public static class Holder{
 		
 		private static GenericResource<JCL_task> resource;
-		private static JCLResultResource localResourceExecute;
 		
 		public Holder(){}
 		
 		//Lock and get result
 		protected JCL_result getResultBlocking(Long ID) {
-			/** begin 3.0 **/
-			JCL_result kafkaReturn = new JCL_resultImpl();
-			
-			try {
-				join(ID);
+			try{
+				//lock waiting result
+				join(ID);				
+				return results.get(ID);
 				
-				kafkaReturn = localResourceExecute.read(
-					ID.toString()
-				);
-			} catch(Exception e) {
-				System.err
-					.println("problem in JCL facade getResultBlocking(Long ID)");
+			}catch (Exception e){
+				System.err.println("problem in JCL facade getResultBlocking(Long ID)");
+				JCL_result jclr = new JCL_resultImpl();
+				jclr.setErrorResult(e);
 				e.printStackTrace();
-				kafkaReturn.setErrorResult(e);
+				return jclr;
 			}
-			
-			return kafkaReturn;
-			/** end 3.0 **/
 		}
 		
 		//Get result
@@ -795,17 +802,23 @@ public class JCL_FacadeImpl implements JCL_facade {
 		}
 		
 		//Wait
-		private void join(Long ID) {
-			/** begin 3.0 **/
-			try {
-				if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
-					while ((localResourceExecute.read(ID.toString())) == null);
+		private void join(long ID) {
+			try{
+				JCL_result jclr = results.get(ID);
+				if((jclr.getCorrectResult()==null)&&(jclr.getErrorResult()==null)){				
+					synchronized (jclr){
+						//Necessary with use Lambari in parallel (racing condition)
+						if((jclr.getCorrectResult()==null)&&(jclr.getErrorResult()==null)){
+						jclr.wait();
+						}
+					}				
+					join(ID);
 				}
-			} catch (Exception e){
-				System.err.println("problem in JCL facade join");
+			}catch (Exception e){
+				System.err.println("problem in JCL facade join ");
+				System.err.println("Contains Key result: "+results.containsKey(ID));
 				e.printStackTrace();
-			}
-			/** end 3.0 **/
+			}		
 		}
 		
 		protected static JCL_facade getInstance(){
@@ -826,14 +839,14 @@ public class JCL_FacadeImpl implements JCL_facade {
 			return instancePacu;
 		}
 		
-		protected static JCL_facade getInstance(JCLResultResource localResourceExecuteParam){
-			localResourceExecute = localResourceExecuteParam;
+		public static JCL_facade getInstancePacu(GenericResource<JCL_task> re, String hostAddress){
+			if (instancePacu == null){
+				((PacuResource)re).setInJCLLamb(numOfTasks, results);
+//				resource = re;
+				instancePacu = new JCL_FacadeImpl(true,re, hostAddress);
+			}
 			
-			if (instance == null){
-				resource = new GenericResource<JCL_task>();
-				instance = new JCL_FacadeImpl(false,resource);
-			}			
-			return instance;
+			return instancePacu;
 		}
 		
 		protected boolean updateTicketH(long ticket,Object result){

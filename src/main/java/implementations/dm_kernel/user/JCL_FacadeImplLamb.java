@@ -64,9 +64,6 @@ public class JCL_FacadeImplLamb extends implementations.sm_kernel.JCL_FacadeImpl
 	public static final ConcurrentHashMap<Long, Long> taskMemory = new ConcurrentHashMap<Long, Long>();
 	private Schema scow = RuntimeSchema.getSchema(ObjectWrap.class);
 	
-	private static final ConcurrentHashMap<String, String> kafkaLocalMemory = new ConcurrentHashMap<String, String>();
-	private static final Collection<String> kafkaTopics = new ArrayList<String>(); 
-	
 	public ConcurrentHashMap<Long, List<Long>> getTaskTimes() {
 		try {
 			return taskTimes;			

@@ -204,7 +204,10 @@ public class MainHost extends Server{
 		this.results =  new ConcurrentHashMap<Long, JCL_result>();
 		this.JclHashMap = new ConcurrentHashMap<String, Set<Object>>();
 		this.taskID = new AtomicLong();
-		this.jcl = (JCL_FacadeImpl)JCL_FacadeImpl.Holder.getInstancePacu(rp);
+		this.jcl = (JCL_FacadeImpl)JCL_FacadeImpl.Holder.getInstancePacu(
+			rp, 
+			this.metaData.get("IP")
+		);
 		this.registerMsg = new AtomicInteger();
 		JCL_handler.setRegisterMsg(registerMsg);
 		JCL_orbImpl.setRegisterMsg(registerMsg);
@@ -309,7 +312,7 @@ public class MainHost extends Server{
 			NetworkInterface network = NetworkInterface.getByInetAddress(ip);
 
 			byte[] mac = network.getHardwareAddress();
-
+			
 			System.out.print("Current MAC address : ");
 
 			StringBuilder sb = new StringBuilder(17);

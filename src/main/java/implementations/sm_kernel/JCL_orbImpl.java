@@ -23,14 +23,15 @@ import java.util.jar.JarFile;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.google.common.primitives.Primitives;
 
 import commom.JCLResultSerializer;
+import commom.Constants;
 import implementations.dm_kernel.JCLTopic;
+import implementations.util.JCLConfigProperties;
 import javassist.ClassClassPath;
 import javassist.ClassPool;
 import javassist.CtClass;
@@ -40,22 +41,26 @@ import javassist.CtPrimitiveType;
 
 public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
-	private Map<String, Class<?>> nameMap;
-	private Map<Object, Object> globalVars;
-	private static AtomicInteger RegisterMsg;
-	private Map<String, JCL_execute> cache1;
-	private AtomicLong idClass = new AtomicLong(0);
-	private Map<String, Integer> cache2;
-	private Set<Object> locks;
-	private long timeOut = 3000L;
-	private static JCL_orb instance;
-	private static JCL_orb instancePacu;
-	private Map<Long, T> results;
-	/** 3.0 begin **/
-	private Producer<String, JCL_result> kafkaProducer;
-	/** 3.0 end **/
+	protected Map<String, Class<?>> nameMap;
+	protected Map<Object, Object> globalVars;
+	protected static AtomicInteger RegisterMsg;
+	protected Map<String, JCL_execute> cache1;
+	protected AtomicLong idClass = new AtomicLong(0);
+	protected Map<String, Integer> cache2;
+	protected Set<Object> locks;
+	protected long timeOut = 3000L;
+	protected static JCL_orb instance;
+	protected static JCL_orb instancePacu;
+	protected Map<Long, T> results;
 	
 	private URLClassLoader classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
+
+	/** 3.0 begin **/
+	private Producer<String, JCL_result> kafkaProducer;
+	
+	private boolean isPacu = false;
+	private String hostAddress = null;
+	/** 3.0 end **/
 	
 	private JCL_orbImpl() {
 		nameMap = new ConcurrentHashMap<String, Class<?>>();
@@ -65,28 +70,36 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 		cache2 = new ConcurrentHashMap<String, Integer>();
 		
 		/** 3.0 begin **/
-		Properties producerProperties = new Properties();
+		initKafka();
+		/** 3.0 end **/
+	}
+	
+	private JCL_orbImpl(String hostAddress) {
+		this.isPacu = true;
+		this.hostAddress = hostAddress;
 		
-		producerProperties.put(
-			ProducerConfig.CLIENT_ID_CONFIG, 
-			"jcl-client");
-		producerProperties.put(
-			ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-			"localhost" + ":" + "9092");
+		nameMap = new ConcurrentHashMap<String, Class<?>>();
+		locks = new ConcurrentSkipListSet<Object>();
+		globalVars = new ConcurrentHashMap<Object, Object>();
+		cache1 = new ConcurrentHashMap<String, JCL_execute>();
+		cache2 = new ConcurrentHashMap<String, Integer>();
+		
+		initKafka();
+	}
+	
+	private void initKafka() {
+		Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 		
 		this.kafkaProducer = new KafkaProducer<>(
-			producerProperties, 
+			properties, 
 			new StringSerializer(), 
 			new JCLResultSerializer()
 		);
-		/** 3.0 end **/
 	}
 
 	@Override
 	public void execute(JCL_task task) {
-		/** begin 3.0 **/
 		ProducerRecord<String, JCL_result> producedRecord;
-		/** end 3.0 **/
 		
 		try {
 			int para;
@@ -101,8 +114,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 					para = task.getMethodParameters().length;
 					
 				int type = cache2.get(task.getObjectName() + ":" + task.getObjectMethod() + ":" + para);
-				System.out.println("METODO -> " + task.getObjectName() + ":" + task.getObjectMethod() + ":" + para);
-				System.out.println("task.getTaskID() -> " + task.getTaskID());
+				
 				task.setTaskTime(System.nanoTime());
 				Object result = instance.JCLExecPacu(type, task.getMethodParameters());
 				task.setTaskTime(System.nanoTime());
@@ -116,29 +128,29 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				} else {
 					jResult.setCorrectResult("no result");
 				}
-				
-				/** begin 3.0 **/
-				Properties topicProperties = new Properties();
-				
-				topicProperties.put("bootstrap.servers", "localhost:9092");
-				topicProperties.put("topic.name", task.getTaskID());
-				topicProperties.put("topic.partitions", "1");
-				topicProperties.put("topic.replication.factor", "1");
-				
-				new JCLTopic().createTopic(topicProperties);
-				
-				String taskId = Long.toString(task.getTaskID());
-				
-				producedRecord = new ProducerRecord<>(
-					taskId,
-					"ex",
-					jResult
-				);
-				
-				System.out.println("jResult -> " + jResult.getCorrectResult());
-				
-				kafkaProducer
-					.send(producedRecord);
+
+				if(isPacu) {
+					JCLTopic jclTopic = new JCLTopic();
+					String topicName = task.getTaskID() + hostAddress.replace(".", "");
+					Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
+					
+					topicProperties.put("topic.name", topicName);					
+					
+					if(!jclTopic.exists(topicProperties)){
+						jclTopic.create(topicProperties);
+					}
+					
+					producedRecord = new ProducerRecord<>(
+						topicName,
+						"ex",
+						jResult
+					);
+					
+					System.out.println(producedRecord);
+					
+					kafkaProducer
+						.send(producedRecord);					
+				}
 				
 				synchronized (jResult) {
 					jResult.notifyAll();
@@ -176,28 +188,30 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						} else {
 							jResult.setCorrectResult("no result");
 						}
-
-						/** begin 3.0 **/
-						Properties topicProperties = new Properties();
 						
-						topicProperties.put("bootstrap.servers", "localhost:9092");
-						topicProperties.put("topic.name", task.getTaskID());
-						topicProperties.put("topic.partitions", "1");
-						topicProperties.put("topic.replication.factor", "1");
+						if(isPacu) {
+							JCLTopic jclTopic = new JCLTopic();
+							String topicName = task.getTaskID() + hostAddress.replace(".", "");
+							Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
+							
+							topicProperties.put("topic.name", topicName);					
+							
+							if(!jclTopic.exists(topicProperties)){
+								jclTopic.create(topicProperties);
+							}
+							
+							producedRecord = new ProducerRecord<>(
+								topicName,
+								"ex",
+								jResult
+							);
+							
+							System.out.println(producedRecord);
+							
+							kafkaProducer
+								.send(producedRecord);					
+						}
 						
-						new JCLTopic().createTopic(topicProperties);
-						
-						String taskId = Long.toString(task.getTaskID());
-						
-						producedRecord = new ProducerRecord<>(
-							taskId,
-							"ex",
-						    jResult
-						);
-						
-						kafkaProducer
-							.send(producedRecord);
-
 						synchronized (jResult) {
 							jResult.notifyAll();
 						}
@@ -516,7 +530,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 	@Override
 	public synchronized boolean instantiateGlobalVar(Object key, Object instance) {
-		System.out.println("B Orb");
 		try {
 			if (instance == null) {
 				return false;
@@ -806,6 +819,11 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	public static JCL_orb getInstancePacu() {
 		return Holder.getInstancePacu();
 	}
+	
+	@SuppressWarnings("rawtypes")
+	public static JCL_orb getInstancePacu(String hostAddressParam) {
+		return Holder.getInstancePacu(hostAddressParam);
+	}
 
 	private static class Holder {
 
@@ -819,6 +837,13 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 		public static JCL_orb getInstancePacu() {
 			if (instancePacu == null) {
 				instancePacu = new JCL_orbImpl();
+			}
+			return instancePacu;
+		}
+		
+		public static JCL_orb getInstancePacu(String hostAddressParam) {
+			if (instancePacu == null) {
+				instancePacu = new JCL_orbImpl(hostAddressParam);
 			}
 			return instancePacu;
 		}

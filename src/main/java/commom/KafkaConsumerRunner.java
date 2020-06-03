@@ -1,15 +1,16 @@
 package commom;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
+import implementations.util.JCLConfigProperties;
 import interfaces.kernel.JCL_result;
 
 public class KafkaConsumerRunner extends Thread {
@@ -19,29 +20,17 @@ public class KafkaConsumerRunner extends Thread {
 	
 	private static JCLResultResource localResourceGlobalVar;
 	private static JCLResultResource localResourceExecute;
-	private static JCLResultResource localResourceMap;
+	private static Map<String, JCLResultResource> localResourceMapContainer;
 	
-	public KafkaConsumerRunner(JCLResultResource localResourceGlobalVarParam, JCLResultResource localResourceExecuteParam, JCLResultResource localResourceMapParam) {
+	public KafkaConsumerRunner(JCLResultResource localResourceGlobalVarParam, JCLResultResource localResourceExecuteParam, Map<String, JCLResultResource> localResourceMapContainerParam) {
 		localResourceGlobalVar = localResourceGlobalVarParam;
 		localResourceExecute = localResourceExecuteParam;
-		localResourceMap = localResourceMapParam;
+		localResourceMapContainer = localResourceMapContainerParam;
 	}
 
 	@Override
 	public void run() {
-		Properties consumerProperties = new Properties();
-
-		consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, 
-			"localhost" + ":" + "9092");
-		consumerProperties.put(
-			ConsumerConfig.CLIENT_ID_CONFIG, 
-			"jcl-client");
-		consumerProperties.put(
-			ConsumerConfig.GROUP_ID_CONFIG, 
-			"jcl-consumer-group");
-		consumerProperties.put(
-			ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, 
-			"earliest");
+		Properties consumerProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 		
 		consumer =  new KafkaConsumer<>(
 			consumerProperties,
@@ -50,26 +39,23 @@ public class KafkaConsumerRunner extends Thread {
 		);
 		
 		try {
-			consumer.subscribe(
-				Pattern.compile(
-					"^[a-zA-Z0-9]+"
-				)
-			);
+			while(!stop.get()) {
+				consumer.subscribe(
+					Pattern.compile(
+						"^[a-zA-Z0-9]+$"
+					)
+				);
 			
-			ConsumerRecords<String, JCL_result> records = consumer.poll(Duration.ofNanos(Long.MAX_VALUE));			
-			
-//			while(!stop.get()) {
-			records.forEach(record -> {
-//				System.out.println(record);
-				System.out.println("topic: " + record.topic() + ", key: " + record.key() + ", value: " + record.value());
-				if(record.key() == null) {
+				ConsumerRecords<String, JCL_result> records = consumer.poll(Duration.ofNanos(Long.MAX_VALUE));
+//				consumer.listTopics().forEach((k, v) -> {
+//					System.out.println(k + ": " + v);
+//				});
+				
+//				System.err.println("START CONSUMER THREAD");
+				records.forEach(record -> {
+//					System.out.println(record);
+//					System.out.println("CONSUMED topic: " + record.topic() + ", key: " + record.key() + ", value: " + record.value().getCorrectResult());
 					
-					
-					localResourceExecute.create(
-						record.topic(),
-						record.value()
-					);
-				} else {
 					switch(record.key()) {
 					case "ex":
 						localResourceExecute.create(
@@ -77,22 +63,29 @@ public class KafkaConsumerRunner extends Thread {
 							record.value()
 						);
 						break;
-					case "mp":
-						localResourceMap.create(
-							record.topic(),
-							record.value()
-						);
-						break;
-					default:
+					case "gv":
 						localResourceGlobalVar.create(
 							record.topic(),
 							record.value()
 						);
 						break;
+					default:
+						JCLResultResource aux = new JCLResultResource();
+						
+						if(localResourceMapContainer.containsKey(record.topic())) {
+							aux = localResourceMapContainer.get(record.topic());
+						}
+						
+						aux.create(record.key(), record.value());
+						
+						localResourceMapContainer.put(record.topic(), aux);
+						
+						break;
 					}
-				}
-			});
-//			}
+				});
+				consumer.commitAsync();
+//				System.err.println("FINISH CONSUMER THREAD");
+			}
 		}catch (Exception e) {
 			System.err.println("problem in KafkaConsumerRunner run()");
 			

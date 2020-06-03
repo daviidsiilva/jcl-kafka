@@ -81,6 +81,17 @@ public final class Constants {
 				return "../jcl_conf/config.properties";
 			}
 		}
+		
+		public static final String JCLKafkaConfig(){
+			if(VmName.equalsIgnoreCase("Dalvik")){
+				return "../jcl_conf/kafkaconfig.properties";
+			}else{
+				return "../jcl_conf/kafkaconfig.properties";
+			}
+		}
+		
+		public static final String mapPrefix = "MAP";
+		public static final String mapHeader = "HEADER";
 	}
 	
 	public final static class IoT{
