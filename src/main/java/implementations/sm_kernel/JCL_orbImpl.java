@@ -21,9 +21,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
+import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.google.common.primitives.Primitives;
@@ -54,39 +56,34 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	protected Map<Long, T> results;
 	
 	private URLClassLoader classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
-
-	/** 3.0 begin **/
-	private Producer<String, JCL_result> kafkaProducer;
 	
 	private boolean isPacu = false;
-	private String hostAddress = null;
-	/** 3.0 end **/
+	private String hostAddress;
+	private Producer<String, JCL_result> kafkaProducer;
 	
 	private JCL_orbImpl() {
+		initKafka();
+		
 		nameMap = new ConcurrentHashMap<String, Class<?>>();
 		locks = new ConcurrentSkipListSet<Object>();
 		globalVars = new ConcurrentHashMap<Object, Object>();
 		cache1 = new ConcurrentHashMap<String, JCL_execute>();
 		cache2 = new ConcurrentHashMap<String, Integer>();
-		
-		/** 3.0 begin **/
-		initKafka();
-		/** 3.0 end **/
 	}
 	
 	private JCL_orbImpl(String hostAddress) {
 		this.isPacu = true;
 		this.hostAddress = hostAddress;
 		
+		initKafka();
+		
 		nameMap = new ConcurrentHashMap<String, Class<?>>();
 		locks = new ConcurrentSkipListSet<Object>();
 		globalVars = new ConcurrentHashMap<Object, Object>();
 		cache1 = new ConcurrentHashMap<String, JCL_execute>();
 		cache2 = new ConcurrentHashMap<String, Integer>();
-		
-		initKafka();
 	}
-	
+
 	private void initKafka() {
 		Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 		
@@ -96,7 +93,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 			new JCLResultSerializer()
 		);
 	}
-
+	
 	@Override
 	public void execute(JCL_task task) {
 		ProducerRecord<String, JCL_result> producedRecord;
@@ -146,10 +143,10 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						jResult
 					);
 					
-					System.out.println(producedRecord);
+//					System.out.println(producedRecord);
 					
 					kafkaProducer
-						.send(producedRecord);					
+						.send(producedRecord);				
 				}
 				
 				synchronized (jResult) {
@@ -206,10 +203,10 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 								jResult
 							);
 							
-							System.out.println(producedRecord);
+//							System.out.println(producedRecord);
 							
 							kafkaProducer
-								.send(producedRecord);					
+								.send(producedRecord);
 						}
 						
 						synchronized (jResult) {

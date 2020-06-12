@@ -13,16 +13,16 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import implementations.util.JCLConfigProperties;
 import interfaces.kernel.JCL_result;
 
-public class KafkaConsumerRunner extends Thread {
-	/** 3.0 begin **/
+public class JCLKafkaConsumerThread extends Thread {
+	
 	AtomicBoolean stop = new AtomicBoolean(false);
 	KafkaConsumer<String, JCL_result> consumer;
 	
 	private static JCLResultResource localResourceGlobalVar;
 	private static JCLResultResource localResourceExecute;
-	private static Map<String, JCLResultResource> localResourceMapContainer;
+	private static JCLResultResourceContainer localResourceMapContainer;
 	
-	public KafkaConsumerRunner(JCLResultResource localResourceGlobalVarParam, JCLResultResource localResourceExecuteParam, Map<String, JCLResultResource> localResourceMapContainerParam) {
+	public JCLKafkaConsumerThread(JCLResultResource localResourceGlobalVarParam, JCLResultResource localResourceExecuteParam, JCLResultResourceContainer localResourceMapContainerParam) {
 		localResourceGlobalVar = localResourceGlobalVarParam;
 		localResourceExecute = localResourceExecuteParam;
 		localResourceMapContainer = localResourceMapContainerParam;
@@ -39,22 +39,25 @@ public class KafkaConsumerRunner extends Thread {
 		);
 		
 		try {
-			while(!stop.get()) {
-				consumer.subscribe(
-					Pattern.compile(
-						"^[a-zA-Z0-9]+$"
-					)
-				);
+			consumer.subscribe(
+				Pattern.compile(
+					"^[a-zA-Z0-9]+$"
+				)
+			);
+//			System.out.println("k");
+//			consumer.listTopics().forEach((k, v) -> {
+//				System.out.println(k);
+//			});
+//			System.out.println("k");
 			
+			consumer.seekToBeginning(consumer.assignment());
+					
+			while(!stop.get()) {
 				ConsumerRecords<String, JCL_result> records = consumer.poll(Duration.ofNanos(Long.MAX_VALUE));
-//				consumer.listTopics().forEach((k, v) -> {
-//					System.out.println(k + ": " + v);
-//				});
-				
-//				System.err.println("START CONSUMER THREAD");
+
 				records.forEach(record -> {
 //					System.out.println(record);
-//					System.out.println("CONSUMED topic: " + record.topic() + ", key: " + record.key() + ", value: " + record.value().getCorrectResult());
+//					System.out.println(record.topic() + " : " + record.key() + " : " + record.value().getCorrectResult());
 					
 					switch(record.key()) {
 					case "ex":
@@ -70,21 +73,28 @@ public class KafkaConsumerRunner extends Thread {
 						);
 						break;
 					default:
-						JCLResultResource aux = new JCLResultResource();
+						JCLResultResource aux = null;
 						
-						if(localResourceMapContainer.containsKey(record.topic())) {
-							aux = localResourceMapContainer.get(record.topic());
+						try {
+							if((localResourceMapContainer.isFinished()==false) || (localResourceMapContainer.getNumOfRegisters()!=0)){
+								if ((aux = localResourceMapContainer.read(record.topic())) == null) {
+									aux = new JCLResultResource();
+								}
+							}
+							
+							aux.create(record.key(), record.value());
+							
+							localResourceMapContainer.create(record.topic(), aux);
+						} catch (Exception e){
+							System.err
+								.println("problem in JCLKafkaConsumerThread");
+							e.printStackTrace();
 						}
-						
-						aux.create(record.key(), record.value());
-						
-						localResourceMapContainer.put(record.topic(), aux);
-						
 						break;
 					}
 				});
+				
 				consumer.commitAsync();
-//				System.err.println("FINISH CONSUMER THREAD");
 			}
 		}catch (Exception e) {
 			System.err.println("problem in KafkaConsumerRunner run()");
@@ -99,5 +109,4 @@ public class KafkaConsumerRunner extends Thread {
 	public void shutdown() {
 		stop.set(true);
 	}
-	/** 3.0 end **/
 }

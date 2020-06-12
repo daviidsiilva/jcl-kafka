@@ -6,17 +6,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import interfaces.kernel.JCL_result;
 
-public class JCLResultResource {
-	private Map<String, JCL_result> registers;
+public class JCLResultResourceContainer {
+	private Map<String, JCLResultResource> registers;
 	protected boolean finished;
 		
-	public JCLResultResource(){
-		this.registers = new ConcurrentHashMap<String, JCL_result>();
+	public JCLResultResourceContainer(){
+		this.registers = new ConcurrentHashMap<String, JCLResultResource>();
 		this.finished = false;		
 	}
 		
-	public synchronized void create(String key, JCL_result value){
-//		System.out.println("JCLResultResource key: " + key + ", value: " + value);
+	public synchronized void create(String key, JCLResultResource value){
+//		System.out.println("JCLResultResourceContainer key: " + key + ", value: " + value);
 		this.registers.put(key, value);
 		wakeup();
 	}
@@ -25,7 +25,7 @@ public class JCLResultResource {
 		this.notify();
 	}
 							
-	public synchronized JCL_result read(String key) throws Exception{
+	public synchronized JCLResultResource read(String key) throws Exception{
 //		System.out.println("JCLResultResource read(" + key + ")");
 //		System.out.println("JCLResultResource registers.size(): " + registers.size());
 //		this.registers.forEach((k, v) -> {
@@ -57,8 +57,8 @@ public class JCLResultResource {
 		return this.finished;
 	}
 	
-	public JCL_result delete(String key) {
-		JCL_result removed = this.registers.remove(key);
+	public JCLResultResource delete(String key) {
+		JCLResultResource removed = this.registers.remove(key);
 		wakeup();
 		return removed;
 	}

@@ -81,8 +81,6 @@ public class MainHost extends Server{
 	protected int serverPort;
 	static int BoardType;
 	private JCL_FacadeImpl jcl;
-	
-	public String JCLKAFKA = "JCLKafka";
 
 	/**
 	 * @param args
@@ -292,7 +290,7 @@ public class MainHost extends Server{
 
 					System.out.println("HOST JCL is OK");					 			
 				}				
-				else System.err.println("HOST JCL/Kafka NOT STARTED");
+				else System.err.println("HOST JCL NOT STARTED");
 
 				ShutDownHook();
 				controlConnector.disconnect();

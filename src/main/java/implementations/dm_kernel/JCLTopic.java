@@ -57,7 +57,7 @@ public class JCLTopic {
 						properties.getProperty("topic.name")
 					)
 				);
-
+//			System.out.println(topicExists);
 			return topicExists;
 		} catch (InterruptedException e) {
 			e.printStackTrace();
