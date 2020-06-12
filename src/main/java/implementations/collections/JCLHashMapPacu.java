@@ -192,11 +192,10 @@ public class JCLHashMapPacu<K,V>
     	int size = -1;
     	
 		try {
-			System.out.println("int size() begin");
 			if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
 				while ((selfMapResource = localResourceMapContainer.read(gvNameKafka)) == null);
 			}
-			System.out.println("int size() end");
+			
 			if((selfMapResource.isFinished() == false) || (selfMapResource.getNumOfRegisters() != 0)){
 				while ((jclResult = selfMapResource.read(Constants.Environment.MAPHEADER)) == null);
 			}
