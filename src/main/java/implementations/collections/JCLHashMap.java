@@ -10,7 +10,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-
+import commom.JCLResultResource;
+import commom.JCLResultResourceContainer;
 
 public class JCLHashMap<K,V>
     extends Holder
@@ -39,7 +40,26 @@ public class JCLHashMap<K,V>
     		currentMap = new JCLHashMapPacu<K, V>(gvName); 
     	}
     }
-
+    
+    /**
+     * Constructs with HashMap name.
+     */
+    public JCLHashMap(String gvName, JCLResultResourceContainer localResourceMapContainer){
+    	
+    	//Started JCL Map on Lambari version
+    	if (DEFAULT_JCL instanceof implementations.sm_kernel.JCL_FacadeImpl){
+    		if (colletionMap.containsKey(gvName)){
+    			currentMap = colletionMap.get(gvName);
+    		}else{
+        		currentMap = new HashMap<K,V>();
+        		colletionMap.put(gvName, currentMap);
+    		}
+    	//Started JCL Map on Pacu version  	
+    	}else{
+    		currentMap = new JCLHashMapPacu<K, V>(gvName, localResourceMapContainer); 
+    	}
+    }
+    
     /**
      * Returns the number of key-value mappings in this map.
      *

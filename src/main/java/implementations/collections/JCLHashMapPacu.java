@@ -1,5 +1,6 @@
 package implementations.collections;
 
+import implementations.dm_kernel.JCLTopic;
 import implementations.dm_kernel.user.JCL_FacadeImpl.Holder;
 import implementations.util.ObjectWrap;
 import interfaces.kernel.JCL_facade;
@@ -12,11 +13,12 @@ import io.protostuff.Schema;
 import io.protostuff.runtime.RuntimeSchema;
 import java.io.*;
 import implementations.util.ByteBuffer;
+import implementations.util.JCLConfigProperties;
+
 import java.util.AbstractCollection;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -29,11 +31,16 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
 
 import commom.Constants;
+import commom.JCLResultResource;
+import commom.JCLResultResourceContainer;
+import commom.JCLResultSerializer;
 import commom.JCL_resultImpl;
-
-
 
 public class JCLHashMapPacu<K,V>
     extends Holder
@@ -77,6 +84,12 @@ public class JCLHashMapPacu<K,V>
 
     private int size;
     
+    /** begin 3.0 **/
+    private Producer<String, JCL_result> kafkaProducer;
+    private static JCLResultResourceContainer localResourceMapContainer;
+    private String gvNameKafka;
+    /** end 3.0 **/
+    
     /**
      * Constructs with HashMap name.
      */
@@ -93,19 +106,77 @@ public class JCLHashMapPacu<K,V>
     	
 		DEFAULT_JCL = super.getInstancePacu(properties);
 		
-		this.init();
+		this.initKafka(gvName);
+    }
+    
+    public JCLHashMapPacu(String gvName, JCLResultResourceContainer localResourceMapContainerParam){
+    	this.gvName = gvName;
+    	localResourceMapContainer = localResourceMapContainerParam;
+    	
+    	//Get Pacu
+    	Properties properties = new Properties();
+		try {
+			properties.load(new FileInputStream(Constants.Environment.JCLConfig()));
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+    	
+		DEFAULT_JCL = super.getInstancePacu(properties);
+    	
+		initKafka(gvName);
     }
     
     // internal utilities
-    void init(){
-//    	if(!JCLHashMapPacu.DEFAULT_JCL.containsGlobalVar(gvName) && !JCLHashMapPacu.DEFAULT_JCL.containsGlobalVar(gvName + "size")) {
-    		JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(gvName, "");
-    		JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(gvName + "size", 0);
-//    	}
+    private void initKafka(String gvName){
+    	this.gvNameKafka = getKeyNameMapped(gvName);
+    	
+    	Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
+    	JCLTopic jclTopic = new JCLTopic();
+		
+    	properties.put("topic.name", gvNameKafka);
+    	properties.put("transactional.id", gvNameKafka);
+		
+    	kafkaProducer = new KafkaProducer<>(
+			properties,
+			new StringSerializer(),
+			new JCLResultSerializer()
+		);
+    	
+    	kafkaProducer.initTransactions();
+		
+		boolean existsMap = jclTopic.exists(properties);
+		
+		if(!existsMap) {
+			jclTopic.create(properties);
+			
+			JCL_result jclResultHeader = new JCL_resultImpl();
+			ProducerRecord<String, JCL_result> producedRecord;
+			
+			Object[] header = {
+					0	
+			};
+			
+			jclResultHeader.setCorrectResult(header);
+			
+			producedRecord = new ProducerRecord<>(
+				gvNameKafka,
+				Constants.Environment.MAPHEADER,
+				jclResultHeader
+			);
+			
+			kafkaProducer
+				.send(producedRecord);
+		}
     }
 
     private String getKeyNameMapped(Object key) {
-    	String keyMapped = "%" + key.toString();
+    	String keyMapped = Constants.Environment.MAPPREFIX + key;
+    	
+    	return keyMapped;
+    }
+    
+    private String getKeyNameMapped(Object mapName, Object key) {
+    	String keyMapped = Constants.Environment.MAPPREFIX + key;
     	
     	return keyMapped;
     }
@@ -116,13 +187,30 @@ public class JCLHashMapPacu<K,V>
      * @return the number of key-value mappings in this map
      */
     public int size(){
-    	JCL_result jclResult = JCLHashMapPacu.DEFAULT_JCL.getValue(gvName + "size");
+    	JCLResultResource selfMapResource = null;
+    	JCL_result jclResult = null;
+    	int size = -1;
     	
-    	Object size = Integer.parseInt(
-    		jclResult.getCorrectResult().toString()
-    	);
+		try {
+			System.out.println("int size() begin");
+			if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
+				while ((selfMapResource = localResourceMapContainer.read(gvNameKafka)) == null);
+			}
+			System.out.println("int size() end");
+			if((selfMapResource.isFinished() == false) || (selfMapResource.getNumOfRegisters() != 0)){
+				while ((jclResult = selfMapResource.read(Constants.Environment.MAPHEADER)) == null);
+			}
+			
+			ArrayList<Object> header = (ArrayList<Object>) jclResult.getCorrectResult();
+			
+			size = (int) header.get(0);
+		} catch (Exception e) {
+			System.err
+				.println("problem in JCL_HashMapPacu V get(" + gvNameKafka + ")");
+			e.printStackTrace();
+		}
     	
-        return Integer.parseInt(size.toString());
+        return size;
     }        
 
     /**
@@ -131,20 +219,36 @@ public class JCLHashMapPacu<K,V>
      * @return <tt>true</tt> if this map contains no key-value mappings
      */
     public boolean isEmpty(){
-    	if (super.hashSize(gvName,idLocalize) == 0){
+    	if (size() == 0){
     		return true;
-    	}else{
-    		return false;
     	}
+    	
+    	return false;
     }
 
     /**
      * Returns the value to which the specified key is mapped.
      */
     public V get(Object key){
-//    	String keyNameMapped = this.getKeyNameMapped(key);
-    	
-    	JCL_result jclResult = JCLHashMapPacu.DEFAULT_JCL.getValue(key);
+    	JCL_result jclResult = new JCL_resultImpl();
+    	JCLResultResource jclResultResource = null;
+		
+    	try {
+    		if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
+				while ((jclResultResource = localResourceMapContainer.read(gvNameKafka)) == null);
+			}
+    		
+			if((jclResultResource.isFinished() == false) || (jclResultResource.getNumOfRegisters() != 0)){
+				while ((jclResult = jclResultResource.read(key.toString())) == null);
+			}
+		} catch (Exception e){
+			jclResult.setCorrectResult("no result");
+			
+			System
+				.err
+				.println("problem in JCL_HashMapPacu V get(" + key + ")");
+			e.printStackTrace();
+		}
     	
     	V value = (V) jclResult.getCorrectResult();
     	
@@ -156,8 +260,9 @@ public class JCLHashMapPacu<K,V>
      */
     public V getLock(Object key){
     	V oldValue = null;
+    	
         if (key != null) {
-        	String keyNameMapped = this.getKeyNameMapped(key);
+        	String keyNameMapped = this.getKeyNameMapped(this.gvName, key);
         	
         	oldValue = (V) JCLHashMapPacu.DEFAULT_JCL.getValueLocking(keyNameMapped).getCorrectResult();
         }else{
@@ -175,7 +280,17 @@ public class JCLHashMapPacu<K,V>
      * key.
      */
     public boolean containsKey(Object key){
-        return super.containsKey(gvName,key,idLocalize);
+    	boolean contains = false;
+    	
+    	try {
+			if(localResourceMapContainer.read(gvNameKafka).read(key.toString()) != null) {
+				contains = true;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+    	return contains;
     }
     
     final Entry<K,V> getEntry(Object key) {
@@ -195,19 +310,41 @@ public class JCLHashMapPacu<K,V>
      */
     
     public V put(K key, V value){
-//    	String keyNameMapped = this.getKeyNameMapped(key);
+    	JCL_result jclResultInstance = new JCL_resultImpl();
+    	JCL_result jclResultHeader = new JCL_resultImpl();
+		
+    	Object[] header = {
+			size() + 1
+		};
     	
-    	JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(
-    		key, 
-    		value
-    	);
-    	
-//    	int size = this.size();
-//    	
-//    	JCLHashMapPacu.DEFAULT_JCL.instantiateGlobalVar(
-//    		gvName, 
-//    		size + 1
-//    	);
+		jclResultInstance.setCorrectResult(value);
+		jclResultHeader.setCorrectResult(header);
+		
+		try {
+			kafkaProducer.beginTransaction();
+			
+			kafkaProducer.send(
+				new ProducerRecord<>(
+					gvNameKafka,
+					key.toString(),
+					jclResultInstance
+				)
+			);
+			
+			kafkaProducer.send(
+				new ProducerRecord<>(
+					gvNameKafka,
+					Constants.Environment.MAPHEADER,
+					jclResultHeader
+				)
+			);
+			
+			kafkaProducer.commitTransaction();
+		} catch (Exception e) {
+			System.err
+				.println("problem in JCL_HashMapPacu V put(" + key + ", " + value + ")");
+			kafkaProducer.abortTransaction();
+		}
         
         return value;
     }
