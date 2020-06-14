@@ -67,13 +67,11 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.kafka.clients.producer.Callback;
-/** 3.0 begin **/
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
-/** 3.0 end **/
 
 import javassist.ClassPool;
 import javassist.CtClass;
@@ -1230,7 +1228,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		producedRecord = new ProducerRecord<>(
 			key.toString(),
-			"gv",
+			Constants.Environment.GLOBAL_VAR_KEY,
 		    jclResultInstance
 		);
 		
@@ -1698,13 +1696,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public JCL_result getValueLocking(Object key) {
 		JCL_result kafkaResult = new JCL_resultImpl();
 		
-		Object lockKey = "$" + key;
-		Object lockKeyWithUserID = lockKey + ":" + this.userID;
-		
 		try {
 //			this.instantiateGlobalVar(
-//				lockKeyWithUserID, 
-//				this.offset
+//				key, 
+//				Constants.Environment.LOCK_PREFIX
 //			);
 //			
 //			while(!this.localMemory.containsKey(lockKeyWithUserID)) {
@@ -1738,7 +1733,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			
 			return kafkaResult;
 		} catch (Exception e){
-			System.err.println("problem in JCL facade getValueLocking(Object key)");
+			System.err
+				.println("problem in JCL facade getValueLocking(Object " + key + ")");
 			
 			JCL_result jclr = new JCL_resultImpl();
 			jclr.setErrorResult(e);

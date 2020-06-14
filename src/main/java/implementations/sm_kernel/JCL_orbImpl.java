@@ -139,7 +139,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 					
 					producedRecord = new ProducerRecord<>(
 						topicName,
-						"ex",
+						Constants.Environment.EXECUTE_KEY,
 						jResult
 					);
 					
@@ -199,7 +199,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 							
 							producedRecord = new ProducerRecord<>(
 								topicName,
-								"ex",
+								Constants.Environment.EXECUTE_KEY,
 								jResult
 							);
 							

@@ -160,7 +160,7 @@ public class JCLHashMapPacu<K,V>
 			
 			producedRecord = new ProducerRecord<>(
 				gvNameKafka,
-				Constants.Environment.MAPHEADER,
+				Constants.Environment.MAP_HEADER,
 				jclResultHeader
 			);
 			
@@ -170,13 +170,13 @@ public class JCLHashMapPacu<K,V>
     }
 
     private String getKeyNameMapped(Object key) {
-    	String keyMapped = Constants.Environment.MAPPREFIX + key;
+    	String keyMapped = Constants.Environment.MAP_PREFIX + key;
     	
     	return keyMapped;
     }
     
     private String getKeyNameMapped(Object mapName, Object key) {
-    	String keyMapped = Constants.Environment.MAPPREFIX + key;
+    	String keyMapped = Constants.Environment.MAP_PREFIX + key;
     	
     	return keyMapped;
     }
@@ -197,7 +197,7 @@ public class JCLHashMapPacu<K,V>
 			}
 			
 			if((selfMapResource.isFinished() == false) || (selfMapResource.getNumOfRegisters() != 0)){
-				while ((jclResult = selfMapResource.read(Constants.Environment.MAPHEADER)) == null);
+				while ((jclResult = selfMapResource.read(Constants.Environment.MAP_HEADER)) == null);
 			}
 			
 			ArrayList<Object> header = (ArrayList<Object>) jclResult.getCorrectResult();
@@ -333,7 +333,7 @@ public class JCLHashMapPacu<K,V>
 			kafkaProducer.send(
 				new ProducerRecord<>(
 					gvNameKafka,
-					Constants.Environment.MAPHEADER,
+					Constants.Environment.MAP_HEADER,
 					jclResultHeader
 				)
 			);

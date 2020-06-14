@@ -85,9 +85,12 @@ public final class Constants {
 		public static final String JCLKafkaConfig() {
 			return "../jcl_conf/kafkaconfig.properties";
 		}
-		
-		public static final String MAPPREFIX = "MAP";
-		public static final String MAPHEADER = "HEADER";
+	
+		public static final String EXECUTE_KEY = "EXK";
+		public static final String GLOBAL_VAR_KEY = "GVK";
+		public static final String MAP_PREFIX = "MAP";
+		public static final String MAP_HEADER = "HEADER";
+		public static final String LOCK_PREFIX = "LOCKKEY";
 	}
 	
 	public final static class IoT{

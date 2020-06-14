@@ -44,11 +44,10 @@ public class JCLKafkaConsumerThread extends Thread {
 					"^[a-zA-Z0-9]+$"
 				)
 			);
-//			System.out.println("k");
+			
 //			consumer.listTopics().forEach((k, v) -> {
 //				System.out.println(k);
 //			});
-//			System.out.println("k");
 			
 			consumer.seekToBeginning(consumer.assignment());
 					
@@ -60,13 +59,13 @@ public class JCLKafkaConsumerThread extends Thread {
 //					System.out.println(record.topic() + " : " + record.key() + " : " + record.value().getCorrectResult());
 					
 					switch(record.key()) {
-					case "ex":
+					case Constants.Environment.EXECUTE_KEY:
 						localResourceExecute.create(
 							record.topic(),
 							record.value()
 						);
 						break;
-					case "gv":
+					case Constants.Environment.GLOBAL_VAR_KEY:
 						localResourceGlobalVar.create(
 							record.topic(),
 							record.value()
