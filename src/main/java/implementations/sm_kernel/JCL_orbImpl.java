@@ -143,7 +143,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						jResult
 					);
 					
-//					System.out.println(producedRecord);
+					System.out.println(producedRecord);
 					
 					kafkaProducer
 						.send(producedRecord);				
@@ -203,7 +203,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 								jResult
 							);
 							
-//							System.out.println(producedRecord);
+							System.out.println(producedRecord);
 							
 							kafkaProducer
 								.send(producedRecord);

@@ -86,11 +86,15 @@ public final class Constants {
 			return "../jcl_conf/kafkaconfig.properties";
 		}
 	
-		public static final String EXECUTE_KEY = "EXK";
+		public static final String EXECUTE_KEY = "EK";
 		public static final String GLOBAL_VAR_KEY = "GVK";
+		public static final String GLOBAL_VAR_LOCK_KEY = "GVLK";
+		public static final String GLOBAL_VAR_UNLOCK_KEY = "GVUK";
 		public static final String MAP_PREFIX = "MAP";
 		public static final String MAP_HEADER = "HEADER";
-		public static final String LOCK_PREFIX = "LOCKKEY";
+		public static final String LOCK_PREFIX = "LOCK";
+		public static final String GLOBAL_VAR_ACQUIRE = "1";
+		public static final String GLOBAL_VAR_RELEASE = "0";
 	}
 	
 	public final static class IoT{

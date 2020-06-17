@@ -1,7 +1,6 @@
 package commom;
 
 import java.time.Duration;
-import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
@@ -45,18 +44,13 @@ public class JCLKafkaConsumerThread extends Thread {
 				)
 			);
 			
-//			consumer.listTopics().forEach((k, v) -> {
-//				System.out.println(k);
-//			});
-			
 			consumer.seekToBeginning(consumer.assignment());
 					
 			while(!stop.get()) {
 				ConsumerRecords<String, JCL_result> records = consumer.poll(Duration.ofNanos(Long.MAX_VALUE));
 
 				records.forEach(record -> {
-//					System.out.println(record);
-//					System.out.println(record.topic() + " : " + record.key() + " : " + record.value().getCorrectResult());
+					System.out.println(record);
 					
 					switch(record.key()) {
 					case Constants.Environment.EXECUTE_KEY:
@@ -65,12 +59,43 @@ public class JCLKafkaConsumerThread extends Thread {
 							record.value()
 						);
 						break;
+						
 					case Constants.Environment.GLOBAL_VAR_KEY:
 						localResourceGlobalVar.create(
 							record.topic(),
 							record.value()
 						);
 						break;
+					
+					case Constants.Environment.GLOBAL_VAR_LOCK_KEY:
+						JCL_result value = record.value();
+						
+						value.setCorrectResult(record.offset());
+						
+						localResourceGlobalVar.create(
+							record.topic() + ":" + record.value().getCorrectResult(),
+							value
+						);
+						break;
+						
+					case Constants.Environment.GLOBAL_VAR_UNLOCK_KEY:
+						localResourceGlobalVar.delete(
+							record.topic() + ":" + record.value().getCorrectResult()
+						);
+						break;
+					
+					case Constants.Environment.GLOBAL_VAR_ACQUIRE:
+						localResourceGlobalVar.create(
+							record.topic() + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE,
+							record.value()
+						);break;
+					
+					case Constants.Environment.GLOBAL_VAR_RELEASE:
+						localResourceGlobalVar.delete(
+							record.topic() + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE 
+						);
+						break;
+					
 					default:
 						JCLResultResource aux = null;
 						
@@ -89,6 +114,7 @@ public class JCLKafkaConsumerThread extends Thread {
 								.println("problem in JCLKafkaConsumerThread");
 							e.printStackTrace();
 						}
+						
 						break;
 					}
 				});

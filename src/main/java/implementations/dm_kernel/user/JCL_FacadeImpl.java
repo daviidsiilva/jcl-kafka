@@ -252,9 +252,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		localResourceExecute = new JCLResultResource();
 		localResourceMapContainer = new JCLResultResourceContainer();
 		
-		System.out.println("JCL_FacadeImpl dm initKafka");
-		System.out.println("JCL_FacadeImpl dm localResourceMapContainer " + localResourceMapContainer);
-		
 		jclKafkaConsumer = new JCLKafkaConsumerThread(
 			localResourceGlobalVar, 
 			localResourceExecute, 
@@ -1620,27 +1617,51 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean setValueUnlocking(Object key, Object value) {
-		
-		Object lockKey = "$" + key;
-		Object lockKeyWithUserID = lockKey + ":" + this.userID;
-		
+		JCL_result jclResult = new JCL_resultImpl();
+
 		try {
-			this.instantiateGlobalVar(
-				key, 
-				value
+			jclResult.setCorrectResult(value);
+			
+			kafkaProducer.send(
+				new ProducerRecord<>(
+					key.toString(),
+					Constants.Environment.GLOBAL_VAR_KEY,
+					jclResult
+				)
 			);
 			
-			this.instantiateGlobalVar(
-				lockKey,  
-				RELEASED
+			jclResult.setCorrectResult(userID);
+			
+			kafkaProducer.send(
+				new ProducerRecord<>(
+					key.toString(),
+					Constants.Environment.GLOBAL_VAR_UNLOCK_KEY,
+					jclResult
+				)
 			);
 			
-			this.instantiateGlobalVar(
-				lockKeyWithUserID, 
-				RELEASED
+			kafkaProducer.send(
+				new ProducerRecord<>(
+					key.toString(),
+					Constants.Environment.GLOBAL_VAR_RELEASE,
+					jclResult
+				)
 			);
+			
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while (localResourceGlobalVar.read(key.toString()).getCorrectResult() != instance);
+			}
+			
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while (localResourceGlobalVar.read(key + ":" + userID).getCorrectResult() != null);
+			}
+			
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while (localResourceGlobalVar.read(key + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE).getCorrectResult() != null);
+			}
 			
 			return true;
+			
 		} catch (Exception e) {
 			System.err.println("problem in JCL facade setValueUnlocking(Object key, Object value)");
 			
@@ -1668,70 +1689,59 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	// TODO
-	private UUID userIDFromLowerOffset (String lockKey) {
-//		Entry<Object, Object> minEntry = null;
-//		
-//		for (Entry<Object, Object> entry : this.localMemory.entrySet()) {
-//			if(entry.getKey().toString().startsWith(lockKey + ":")) {
-//				if(Long.parseLong(entry.getValue().toString()) >= 0) {
-//					if (minEntry == null || Long.parseLong(entry.getValue().toString()) < Long.parseLong(minEntry.getValue().toString())) {
-//						minEntry = entry;
-//					}
-//				}
-//			}
-//		}
-//		
-//		String thisUserIDStringified = this.userID.toString();
-//		
-//		if(minEntry.getKey().toString().contains(thisUserIDStringified)) {
-//			return this.userID;
-//			
-//		}
+	private boolean canAcquireGlobalVar (Object key) {
+		Entry<String, JCL_result> minEntry = null;
+		String prefix = key + ":" + Constants.Environment.LOCK_PREFIX;
 		
-		return UUID.randomUUID();
+		for (Entry<String, JCL_result> entry : localResourceGlobalVar.entrySet()) {
+			if(entry.getKey().startsWith(prefix)) {
+				if (minEntry == null || Long.parseLong(entry.getValue().toString()) < Long.parseLong(minEntry.getValue().toString())) {
+					minEntry = entry;
+				}
+			}
+		}
+		
+		String userIDStringified = userID.toString();
+		
+		if(minEntry.getKey().toString().contains(userIDStringified)) {
+			return true;
+		}
+		
+		return false;
 	}
 	
 	// TODO
 	@Override
 	public JCL_result getValueLocking(Object key) {
-		JCL_result kafkaResult = new JCL_resultImpl();
+		JCL_result jclResult = new JCL_resultImpl();
+
+		jclResult.setCorrectResult(userID);
+
+		kafkaProducer.send(
+			new ProducerRecord<>(
+				key.toString(),
+				Constants.Environment.GLOBAL_VAR_LOCK_KEY,
+				jclResult
+			)
+		);
 		
 		try {
-//			this.instantiateGlobalVar(
-//				key, 
-//				Constants.Environment.LOCK_PREFIX
-//			);
-//			
-//			while(!this.localMemory.containsKey(lockKeyWithUserID)) {
-//				this.getValue(lockKey);
-//				System.out.println(this.localMemory);
-//			}
-//			
-//			do {
-//				UUID userIDWhoCanLock = this.userIDFromLowerOffset(lockKey.toString());
-//
-//				if(userIDWhoCanLock == this.userID) {
-//					this.instantiateGlobalVar(
-//						lockKey, 
-//						ACQUIRED
-//					);
-//
-//					kafkaResult.setCorrectResult(
-//						this.localMemory.get(
-//							key
-//						)
-//					);
-//
-//					return kafkaResult;
-//				}
-//
-//				this.getValue(lockKeyWithUserID);
-//				
-//			} while(this.localMemory.containsKey(lockKey) && this.localMemory.get(lockKey) == ACQUIRED);
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while ((jclResult = localResourceGlobalVar.read(key + ":" + userID)) == null);
+			}
 			
-			kafkaResult.setCorrectResult(null);
+			while(!canAcquireGlobalVar(key) && localResourceGlobalVar.read(key + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE) != null);
 			
-			return kafkaResult;
+			kafkaProducer
+				.send(new ProducerRecord<>(
+					key.toString(),
+					Constants.Environment.GLOBAL_VAR_ACQUIRE,
+					jclResult
+				));
+			
+			jclResult.setCorrectResult(null);
+			
+			return jclResult;
 		} catch (Exception e){
 			System.err
 				.println("problem in JCL facade getValueLocking(Object " + key + ")");
