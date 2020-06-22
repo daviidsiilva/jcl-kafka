@@ -30,7 +30,7 @@ public class JCLKafkaConsumerThread extends Thread {
 	@Override
 	public void run() {
 		Properties consumerProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-		
+//		System.out.println("consumerProperties: " + consumerProperties);
 		consumer =  new KafkaConsumer<>(
 			consumerProperties,
 			new StringDeserializer(),
@@ -45,12 +45,16 @@ public class JCLKafkaConsumerThread extends Thread {
 			);
 			
 			consumer.seekToBeginning(consumer.assignment());
+			
+//			consumer.listTopics().forEach((k, v) -> {
+//				System.out.println("topic: " + k);
+//			});
 					
 			while(!stop.get()) {
 				ConsumerRecords<String, JCL_result> records = consumer.poll(Duration.ofNanos(Long.MAX_VALUE));
 
 				records.forEach(record -> {
-					System.out.println(record);
+//					System.out.println(record);
 					
 					switch(record.key()) {
 					case Constants.Environment.EXECUTE_KEY:
@@ -68,7 +72,7 @@ public class JCLKafkaConsumerThread extends Thread {
 						break;
 					
 					case Constants.Environment.GLOBAL_VAR_LOCK_KEY:
-						JCL_result value = record.value();
+						JCL_result value = new JCL_resultImpl();
 						
 						value.setCorrectResult(record.offset());
 						
@@ -88,11 +92,18 @@ public class JCLKafkaConsumerThread extends Thread {
 						localResourceGlobalVar.create(
 							record.topic() + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE,
 							record.value()
-						);break;
+						);
+						break;
 					
 					case Constants.Environment.GLOBAL_VAR_RELEASE:
 						localResourceGlobalVar.delete(
 							record.topic() + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE 
+						);
+						break;
+					
+					case Constants.Environment.GLOBAL_VAR_DEL:
+						localResourceGlobalVar.delete(
+							record.topic() 
 						);
 						break;
 					

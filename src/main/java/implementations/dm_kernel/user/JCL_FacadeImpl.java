@@ -66,6 +66,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -119,9 +120,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private static JCLResultResourceContainer localResourceMapContainer;
 	
 	private JCLKafkaConsumerThread jclKafkaConsumer;
-	
-	private static final String ACQUIRED = "-1";
-	private static final String RELEASED = "-2";
 	/** 3.0 end **/
 	
 	protected JCL_FacadeImpl(Properties properties){
@@ -1573,45 +1571,22 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean deleteGlobalVar(Object key) {
-		lock.readLock().lock();
 		try {
-
-			//Get Host
-			int[] t = rand.HostList(delta, key.hashCode(), devicesStorage.size());
-			List<Future<JCL_result>> ticks = new ArrayList<Future<JCL_result>>();
-			for(int hostId:t){			
-				//get host
-				Entry<String, Map<String, String>> hostPort = devicesStorage.get(hostId);				
-				String host = hostPort.getValue().get("IP");
-				String port = hostPort.getValue().get("PORT");
-				String mac = hostPort.getValue().get("MAC");
-				String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-
-				//destroyGlobalVar using lambari
-				Object[] argsLamS = {key,serverAdd,serverPort};
-				ticks.add(jcl.execute("JCL_FacadeImplLamb", "destroyGlobalVarOnHost", argsLamS));
-
-				//destroyGlobalVar using lambari
-				Object[] argsLam = {key,host,port,mac,portS,hostId};
-				ticks.add(jcl.execute("JCL_FacadeImplLamb", "destroyGlobalVar", argsLam));
-			}
-
-			//return value
-			for(Future<JCL_result> tick:ticks){
-				JCL_result result = tick.get();
-				if((Boolean)result.getCorrectResult()){
-					return 	true;
-				}			
-			}
-
-			return false;
-
+			kafkaProducer
+				.send(new ProducerRecord<>(
+					key.toString(),
+					Constants.Environment.GLOBAL_VAR_DEL,
+				    null
+				)
+			);
+			
+			return true;
+			
 		} catch (Exception e) {
-			System.err.println("problem in JCL facade destroyGlobalVar(Object key)");
+			System.err
+				.println("problem in JCL facade destroyGlobalVar(Object " + key + ")");
 			e.printStackTrace();
 			return false;
-		}finally {
-			lock.readLock().unlock();
 		}
 	}
 
@@ -1630,6 +1605,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				)
 			);
 			
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while (localResourceGlobalVar.read(key.toString()).getCorrectResult() != value);
+			}
+			
 			jclResult.setCorrectResult(userID);
 			
 			kafkaProducer.send(
@@ -1640,6 +1619,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				)
 			);
 			
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while (localResourceGlobalVar.read(key + ":" + userID) != null);
+			}
+			
 			kafkaProducer.send(
 				new ProducerRecord<>(
 					key.toString(),
@@ -1649,21 +1632,13 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			);
 			
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while (localResourceGlobalVar.read(key.toString()).getCorrectResult() != instance);
-			}
-			
-			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while (localResourceGlobalVar.read(key + ":" + userID).getCorrectResult() != null);
-			}
-			
-			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while (localResourceGlobalVar.read(key + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE).getCorrectResult() != null);
+				while (localResourceGlobalVar.read(key + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE) != null);
 			}
 			
 			return true;
 			
 		} catch (Exception e) {
-			System.err.println("problem in JCL facade setValueUnlocking(Object key, Object value)");
+			System.err.println("problem in JCL facade setValueUnlocking(Object " + key + ", Object " + value + ")");
 			
 			e.printStackTrace();
 			
@@ -1673,14 +1648,19 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	@Override
 	public JCL_result getValue(Object key) {
-//		System.out.println("JCL_result getValue(" + key + ")");
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		
 		try {
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while ((kafkaReturn = localResourceGlobalVar.read(key.toString())) == null);
+				while ((kafkaReturn = localResourceGlobalVar.read(key.toString())) == null) {
+					if(!this.containsGlobalVar(key)) {
+						return kafkaReturn;
+					}
+				}
 			}
 		} catch (Exception e) {
+			System.err
+				.println("problem in JCL_result getValue(" + key + ")");
 			e.printStackTrace();
 			kafkaReturn.setErrorResult(e);
 		}
@@ -1690,6 +1670,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	// TODO
 	private boolean canAcquireGlobalVar (Object key) {
+		System.out.print("canAcquireGlobalVar " + key + " ");
 		Entry<String, JCL_result> minEntry = null;
 		String prefix = key + ":" + Constants.Environment.LOCK_PREFIX;
 		
@@ -1703,10 +1684,11 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		String userIDStringified = userID.toString();
 		
-		if(minEntry.getKey().toString().contains(userIDStringified)) {
+		if(minEntry != null && minEntry.getKey().toString().contains(userIDStringified)) {
+			System.out.println(true);
 			return true;
 		}
-		
+		System.out.println(false);
 		return false;
 	}
 	
@@ -1739,19 +1721,20 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					jclResult
 				));
 			
-			jclResult.setCorrectResult(null);
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while ((jclResult = localResourceGlobalVar.read(key.toString())) == null);
+			}
 			
 			return jclResult;
 		} catch (Exception e){
 			System.err
 				.println("problem in JCL facade getValueLocking(Object " + key + ")");
 			
-			JCL_result jclr = new JCL_resultImpl();
-			jclr.setErrorResult(e);
+			jclResult.setErrorResult(e);
 			
 			e.printStackTrace();
 			
-			return jclr;
+			return jclResult;
 		}
 	}
 
@@ -1944,41 +1927,20 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean isLock(Object key){
-		lock.readLock().lock();
 		try {
-			//Get Host
-			int[] t = rand.HostList(delta, key.hashCode(), devicesStorage.size());
-			List<Future<JCL_result>> ticks = new ArrayList<Future<JCL_result>>();
-			for(int hostId:t){
-				Entry<String, Map<String, String>> hostPort = devicesStorage.get(hostId);
-
-				String host = hostPort.getValue().get("IP");
-				String port = hostPort.getValue().get("PORT");
-				String mac = hostPort.getValue().get("MAC");
-				String portS = hostPort.getValue().get("PORT_SUPER_PEER");
-
-				//containsGlobalVar using lambari
-				Object[] argsLam = {key,host,port,mac,portS,hostId};
-				ticks.add(jcl.execute("JCL_FacadeImplLamb", "isLock", argsLam));
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)) {
+				if (localResourceGlobalVar.read(key + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE) == null) {
+					return false;
+				}
 			}
 
-			//return value
-			for(Future<JCL_result> tick:ticks){
-				JCL_result result = tick.get();
-				if((Boolean)result.getCorrectResult()){
-					return 	true;
-				}			
-			}
-
-			return false;
+			return true;
 
 		} catch (Exception e) {
 			System.err
-			.println("problem in JCL facade isLock(Object key)");
+				.println("problem in JCL facade isLock(Object " + key + ")");
 			e.printStackTrace();
 			return false;
-		}finally {
-			lock.readLock().unlock();
 		}
 	}
 
@@ -2100,6 +2062,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 		protected synchronized static JCL_facade getInstance(){
 			Properties properties = new Properties();
+			Properties kafkaProperties = new Properties();
 			
 			try {
 				properties.load(new FileInputStream("../jcl_conf/config.properties"));
@@ -2155,6 +2118,37 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					//save properties to project root folder
 
 					properties.store(output, null);
+				} catch (IOException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				}
+			}catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
+			try {
+				kafkaProperties.load(new FileInputStream(Constants.Environment.JCLKafkaConfig()));
+			}catch (FileNotFoundException e){					
+				System.err.println("File not found (" + Constants.Environment.JCLKafkaConfig() + ") !!!!!");
+				System.out.println("Create properties file " + Constants.Environment.JCLKafkaConfig());
+				try {
+					File kafkaFile = new File(Constants.Environment.JCLKafkaConfig());
+					kafkaFile.getParentFile().mkdirs(); // Will create parent directories if not exists
+					kafkaFile.createNewFile();
+
+					OutputStream output = new FileOutputStream(kafkaFile,false);
+					
+					// set the properties value
+					kafkaProperties.setProperty("bootstrap.servers", "192.168.1.7:9092");
+					kafkaProperties.setProperty("client.id", "jcl-client");
+					kafkaProperties.setProperty("group.id", "jcl-" + "192.168.1.7");
+					kafkaProperties.setProperty("auto.offset.reset", "earliest");
+					kafkaProperties.setProperty("topic.partitions", "1");
+					kafkaProperties.setProperty("topic.replication.factor", "1");
+					//save properties to project root folder
+
+					kafkaProperties.store(output, null);
 				} catch (IOException e1) {
 					// TODO Auto-generated catch block
 					e1.printStackTrace();
@@ -2453,6 +2447,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 		
 		protected JCL_result getResultBlocking(Long ID) {
+			System.out.println(ID);
 			JCL_result result; 
 			JCL_result resultF = new JCL_resultImpl();
 			Object[] resultConfig;

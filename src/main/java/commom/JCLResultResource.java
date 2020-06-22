@@ -2,6 +2,8 @@
 package commom;
 
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import interfaces.kernel.JCL_result;
@@ -16,7 +18,6 @@ public class JCLResultResource {
 	}
 		
 	public synchronized void create(String key, JCL_result value){
-//		System.out.println("JCLResultResource key: " + key + ", value: " + value);
 		this.registers.put(key, value);
 		wakeup();
 	}
@@ -26,16 +27,11 @@ public class JCLResultResource {
 	}
 							
 	public synchronized JCL_result read(String key) throws Exception{
-//		System.out.println("JCLResultResource read(" + key + ")");
-//		System.out.println("JCLResultResource registers.size(): " + registers.size());
-//		this.registers.forEach((k, v) -> {
-//			System.out.println("JCLResultResource k: " + k + ", v: " + v.getCorrectResult());
-//		});
 		if(!this.registers.isEmpty())
 			return this.registers.get(key);
 		else {
-//			if(finished == false)
-//				suspend();
+			if(finished == false)
+				suspend();
 			return null;	
 		}
 	}
@@ -61,5 +57,15 @@ public class JCLResultResource {
 		JCL_result removed = this.registers.remove(key);
 		wakeup();
 		return removed;
+	}
+	
+	public Set<Entry<String, JCL_result>> entrySet(){
+		return registers.entrySet();
+	}
+	
+	public void print() {
+		registers.forEach((k, v) -> {
+			System.out.println("k: "+k+", v: "+v);
+		});
 	}
 }
