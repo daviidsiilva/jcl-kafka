@@ -1214,7 +1214,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			
 			topicProperties.put("topic.name", key.toString());
 			
-			new JCLTopic().create(topicProperties);
+			JCLTopic jclTopic = JCLTopic.getInstance();
+			
+			jclTopic.create(topicProperties);
 		}
 		
 		JCL_result jclResultInstance = new JCL_resultImpl();
@@ -1653,7 +1655,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		try {
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
 				while ((kafkaReturn = localResourceGlobalVar.read(key.toString())) == null) {
-					if(!this.containsGlobalVar(key)) {
+					if(!containsGlobalVar(key)) {
 						return kafkaReturn;
 					}
 				}
@@ -1699,6 +1701,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 		jclResult.setCorrectResult(userID);
 
+		// gera token do acquire aqui
+		
 		kafkaProducer.send(
 			new ProducerRecord<>(
 				key.toString(),
@@ -1789,7 +1793,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		properties.put("topic.name", key);
 		
-		boolean exists = new JCLTopic().exists(properties);
+		JCLTopic jclTopic = JCLTopic.getInstance();
+		
+		boolean exists = jclTopic.exists(properties);
 		
 		return exists;
 	}

@@ -127,7 +127,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				}
 
 				if(isPacu) {
-					JCLTopic jclTopic = new JCLTopic();
+					JCLTopic jclTopic = JCLTopic.getInstance();
 					String topicName = task.getTaskID() + hostAddress.replace(".", "");
 					Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 					
@@ -142,8 +142,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						Constants.Environment.EXECUTE_KEY,
 						jResult
 					);
-					
-					System.out.println(producedRecord);
 					
 					kafkaProducer
 						.send(producedRecord);				
@@ -187,7 +185,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						}
 						
 						if(isPacu) {
-							JCLTopic jclTopic = new JCLTopic();
+							JCLTopic jclTopic = JCLTopic.getInstance();
 							String topicName = task.getTaskID() + hostAddress.replace(".", "");
 							Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 							
@@ -202,8 +200,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 								Constants.Environment.EXECUTE_KEY,
 								jResult
 							);
-							
-							System.out.println(producedRecord);
 							
 							kafkaProducer
 								.send(producedRecord);

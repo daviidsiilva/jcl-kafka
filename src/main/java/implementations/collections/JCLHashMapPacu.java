@@ -131,7 +131,7 @@ public class JCLHashMapPacu<K,V>
     	this.gvNameKafka = getKeyNameMapped(gvName);
     	
     	Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-    	JCLTopic jclTopic = new JCLTopic();
+    	JCLTopic jclTopic = JCLTopic.getInstance();
 		
     	properties.put("topic.name", gvNameKafka);
     	properties.put("transactional.id", gvNameKafka);
