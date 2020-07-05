@@ -27,11 +27,19 @@ public class JCLResultResource {
 	}
 							
 	public synchronized JCL_result read(String key) throws Exception{
-		if(!this.registers.isEmpty())
-			return this.registers.get(key);
+//		System.out.println("A " + Thread.currentThread().getId() + " @ " + key);
+		if(!this.registers.isEmpty() && registers.containsKey(key)) {
+//			System.out.println("B " + Thread.currentThread().getId() + " @ " + key);
+			JCL_result r = this.registers.get(key);
+//			System.out.println(Thread.currentThread().getId() + " + " + key + " + " + r + " + " + r.getCorrectResult());
+			return r;
+		}
 		else {
-			if(finished == false)
-				suspend();
+//			System.out.println("C " + Thread.currentThread().getId() + " @ " + key);
+//			if(finished == false) {
+////				System.out.println("D " + Thread.currentThread().getId() + " @ " + key);
+//				suspend();
+//			}
 			return null;	
 		}
 	}
@@ -65,7 +73,7 @@ public class JCLResultResource {
 	
 	public void print() {
 		registers.forEach((k, v) -> {
-			System.out.println("k: "+k+", v: "+v);
+			System.out.println("k: " + k + ", v: " + v.getCorrectResult());
 		});
 	}
 }

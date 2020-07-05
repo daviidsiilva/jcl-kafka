@@ -72,6 +72,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import javassist.ClassPool;
@@ -111,8 +112,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private int port;
 	
 	/** 3.0 begin **/
-	public UUID userID;
-	
 	private Producer<String, JCL_result> kafkaProducer;
 	
 	private static JCLResultResource localResourceGlobalVar;
@@ -236,8 +235,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	private void initKafka() {
-		userID = UUID.randomUUID();
-		
 		Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 
 		kafkaProducer = new KafkaProducer<>(
@@ -256,7 +253,16 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			localResourceMapContainer
 		);
 		
-		jclKafkaConsumer.start();
+		try {
+			jclKafkaConsumer.start();
+			synchronized (jclKafkaConsumer) {
+				jclKafkaConsumer.wait();
+			}
+		} catch (InterruptedException e) {
+			System.err
+				.println("Problem in void initKafka()");
+			e.printStackTrace();
+		}
 	}
 	
 	public void update(){
@@ -1607,35 +1613,19 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				)
 			);
 			
-			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while (localResourceGlobalVar.read(key.toString()).getCorrectResult() != value);
-			}
-			
-			jclResult.setCorrectResult(userID);
-			
-			kafkaProducer.send(
-				new ProducerRecord<>(
-					key.toString(),
-					Constants.Environment.GLOBAL_VAR_UNLOCK_KEY,
-					jclResult
-				)
-			);
-			
-			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while (localResourceGlobalVar.read(key + ":" + userID) != null);
-			}
-			
 			kafkaProducer.send(
 				new ProducerRecord<>(
 					key.toString(),
 					Constants.Environment.GLOBAL_VAR_RELEASE,
-					jclResult
+					new JCL_resultImpl()
 				)
 			);
 			
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
 				while (localResourceGlobalVar.read(key + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE) != null);
 			}
+			
+			// TODO deletar mensagens ?
 			
 			return true;
 			
@@ -1671,60 +1661,64 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	// TODO
-	private boolean canAcquireGlobalVar (Object key) {
-		System.out.print("canAcquireGlobalVar " + key + " ");
+	private boolean canAcquireGlobalVar (Object key, String lockToken) {
 		Entry<String, JCL_result> minEntry = null;
-		String prefix = key + ":" + Constants.Environment.LOCK_PREFIX;
+		String prefix = key + ":" + Constants.Environment.LOCK_PREFIX + ":";
 		
 		for (Entry<String, JCL_result> entry : localResourceGlobalVar.entrySet()) {
-			if(entry.getKey().startsWith(prefix)) {
-				if (minEntry == null || Long.parseLong(entry.getValue().toString()) < Long.parseLong(minEntry.getValue().toString())) {
+			if(entry.getKey().startsWith(prefix)) {				
+				if (minEntry == null || Long.parseLong(entry.getValue().getCorrectResult().toString()) < Long.parseLong(minEntry.getValue().getCorrectResult().toString())) {
 					minEntry = entry;
 				}
 			}
 		}
 		
-		String userIDStringified = userID.toString();
-		
-		if(minEntry != null && minEntry.getKey().toString().contains(userIDStringified)) {
-			System.out.println(true);
+//		System.out.println("2 " + Thread.currentThread().getId() + " -> " + key + " : " + lockToken + " : " + minEntry.getValue().getCorrectResult());
+		if(minEntry != null && minEntry.getKey().toString().contains(lockToken)) {
+//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|IF minEntry{key:" + minEntry.getKey() + ",value:" + minEntry.getValue().getCorrectResult());
 			return true;
 		}
-		System.out.println(false);
+		
 		return false;
 	}
 	
 	// TODO
 	@Override
 	public JCL_result getValueLocking(Object key) {
-		JCL_result jclResult = new JCL_resultImpl();
-
-		jclResult.setCorrectResult(userID);
-
-		// gera token do acquire aqui
-		
+//		System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|getValueLocking:" + key);
+		JCL_result jclResult = null;
+		JCL_result jclResultLockToken = new JCL_resultImpl();
+		String lockToken = UUID.randomUUID().toString();
+//		System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|token:" + lockToken);
+		jclResultLockToken.setCorrectResult(lockToken);
+//		System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|send{key:" + Constants.Environment.GLOBAL_VAR_LOCK_KEY + ",value:" + lockToken + "}");
 		kafkaProducer.send(
 			new ProducerRecord<>(
 				key.toString(),
 				Constants.Environment.GLOBAL_VAR_LOCK_KEY,
-				jclResult
+				jclResultLockToken
 			)
 		);
 		
 		try {
+//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|A:" + (jclResult = localResourceGlobalVar.read(key + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null);
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while ((jclResult = localResourceGlobalVar.read(key + ":" + userID)) == null);
+				while ((jclResult = localResourceGlobalVar.read(key + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null);
 			}
+//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|!canAcquireGlobalVar(" + lockToken + "):" + !canAcquireGlobalVar(key, lockToken));	
+//			System.out.println(Thread.currentThread().getId() + " -> " + key + "," + lockToken + " -> " + !canAcquireGlobalVar(key, lockToken));
+			while(!canAcquireGlobalVar(key, lockToken));
 			
-			while(!canAcquireGlobalVar(key) && localResourceGlobalVar.read(key + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE) != null);
-			
+//			System.out.println("lockToken a -> " + lockToken);
+//			System.out.println("3 " + Thread.currentThread().getId() + " ---- "+ jclResult.getCorrectResult());
+//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|send{key:" + Constants.Environment.GLOBAL_VAR_ACQUIRE + ",value:" + lockToken + "}");
 			kafkaProducer
 				.send(new ProducerRecord<>(
 					key.toString(),
 					Constants.Environment.GLOBAL_VAR_ACQUIRE,
-					jclResult
+					jclResultLockToken
 				));
-			
+//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|A:" + (jclResult = localResourceGlobalVar.read(key.toString())) == null);
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
 				while ((jclResult = localResourceGlobalVar.read(key.toString())) == null);
 			}
@@ -1733,10 +1727,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		} catch (Exception e){
 			System.err
 				.println("problem in JCL facade getValueLocking(Object " + key + ")");
+			e.printStackTrace();
 			
 			jclResult.setErrorResult(e);
-			
-			e.printStackTrace();
 			
 			return jclResult;
 		}
@@ -2453,28 +2446,24 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 		
 		protected JCL_result getResultBlocking(Long ID) {
-			System.out.println(ID);
-			JCL_result result; 
-			JCL_result resultF = new JCL_resultImpl();
+			JCL_result result, resultF = new JCL_resultImpl();
 			Object[] resultConfig;
 			Object hostAddress, hostTaskId;
 
 			try {
-
 				result = super.getResultBlocking(ID);
 				resultConfig = (Object[])result.getCorrectResult();
-
 				hostTaskId = resultConfig[0];
 				hostAddress = resultConfig[1].toString().replace(".", "");
+				String topicName = hostTaskId.toString() + hostAddress;
 
-				String topicName = hostTaskId.toString() + hostAddress;  
-//				System.out.println("finalTaskId: " + topicName);
 				try {
 					if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
 						while ((resultF = localResourceExecute.read(topicName)) == null);
 					}
 				} catch (Exception e){
-					System.err.println("problem in JCL facade join");
+					System.err
+						.println("problem in JCL_result getResultBlocking(" + ID + ")");
 					e.printStackTrace();
 
 					resultF.setErrorResult(e);

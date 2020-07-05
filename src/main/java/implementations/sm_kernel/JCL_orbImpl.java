@@ -130,19 +130,16 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 					JCLTopic jclTopic = JCLTopic.getInstance();
 					String topicName = task.getTaskID() + hostAddress.replace(".", "");
 					Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-					
 					topicProperties.put("topic.name", topicName);					
 					
-					if(!jclTopic.exists(topicProperties)){
-						jclTopic.create(topicProperties);
-					}
+//					jclTopic.create(topicProperties);
 					
 					producedRecord = new ProducerRecord<>(
 						topicName,
 						Constants.Environment.EXECUTE_KEY,
 						jResult
 					);
-					
+					System.out.println(producedRecord);
 					kafkaProducer
 						.send(producedRecord);				
 				}
@@ -188,19 +185,16 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 							JCLTopic jclTopic = JCLTopic.getInstance();
 							String topicName = task.getTaskID() + hostAddress.replace(".", "");
 							Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
+							topicProperties.put("topic.name", topicName);
 							
-							topicProperties.put("topic.name", topicName);					
-							
-							if(!jclTopic.exists(topicProperties)){
-								jclTopic.create(topicProperties);
-							}
+//							jclTopic.create(topicProperties);
 							
 							producedRecord = new ProducerRecord<>(
 								topicName,
 								Constants.Environment.EXECUTE_KEY,
 								jResult
 							);
-							
+							System.out.println(producedRecord);
 							kafkaProducer
 								.send(producedRecord);
 						}

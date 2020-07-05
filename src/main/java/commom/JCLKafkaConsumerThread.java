@@ -30,7 +30,7 @@ public class JCLKafkaConsumerThread extends Thread {
 	@Override
 	public void run() {
 		Properties consumerProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-//		System.out.println("consumerProperties: " + consumerProperties);
+		
 		consumer =  new KafkaConsumer<>(
 			consumerProperties,
 			new StringDeserializer(),
@@ -46,15 +46,17 @@ public class JCLKafkaConsumerThread extends Thread {
 			
 			consumer.seekToBeginning(consumer.assignment());
 			
-//			consumer.listTopics().forEach((k, v) -> {
-//				System.out.println("topic: " + k);
-//			});
+			synchronized (this) {
+				this.notify();
+			}
 					
 			while(!stop.get()) {
 				ConsumerRecords<String, JCL_result> records = consumer.poll(Duration.ofNanos(Long.MAX_VALUE));
-
+				
 				records.forEach(record -> {
+//					System.out.print("");
 //					System.out.println(record);
+//					System.out.println("record t:" + record.topic() + ", k:" + record.key() + ", v:" + record.value().getCorrectResult() + ", o:" + record.offset());
 					
 					switch(record.key()) {
 					case Constants.Environment.EXECUTE_KEY:
@@ -77,14 +79,8 @@ public class JCLKafkaConsumerThread extends Thread {
 						value.setCorrectResult(record.offset());
 						
 						localResourceGlobalVar.create(
-							record.topic() + ":" + record.value().getCorrectResult(),
+							record.topic() + ":" + Constants.Environment.LOCK_PREFIX + ":" + record.value().getCorrectResult(),
 							value
-						);
-						break;
-						
-					case Constants.Environment.GLOBAL_VAR_UNLOCK_KEY:
-						localResourceGlobalVar.delete(
-							record.topic() + ":" + record.value().getCorrectResult()
 						);
 						break;
 					
@@ -96,9 +92,21 @@ public class JCLKafkaConsumerThread extends Thread {
 						break;
 					
 					case Constants.Environment.GLOBAL_VAR_RELEASE:
-						localResourceGlobalVar.delete(
-							record.topic() + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE 
-						);
+						try {
+							JCL_result jclResultLockToken = localResourceGlobalVar.read(record.topic() + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE);
+							
+							localResourceGlobalVar.delete(
+								record.topic() + ":" + Constants.Environment.LOCK_PREFIX + ":" + jclResultLockToken.getCorrectResult()
+							);
+							
+							localResourceGlobalVar.delete(
+								record.topic() + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE
+							);
+						} catch (Exception e1) {
+							System.err
+								.println("Problem in JCLKafkaConsumerThread case " + Constants.Environment.GLOBAL_VAR_RELEASE);
+							e1.printStackTrace();
+						}
 						break;
 					
 					case Constants.Environment.GLOBAL_VAR_DEL:
@@ -118,14 +126,12 @@ public class JCLKafkaConsumerThread extends Thread {
 							}
 							
 							aux.create(record.key(), record.value());
-							
 							localResourceMapContainer.create(record.topic(), aux);
 						} catch (Exception e){
 							System.err
 								.println("problem in JCLKafkaConsumerThread");
 							e.printStackTrace();
 						}
-						
 						break;
 					}
 				});
