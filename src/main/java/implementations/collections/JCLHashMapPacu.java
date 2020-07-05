@@ -147,8 +147,6 @@ public class JCLHashMapPacu<K,V>
 		boolean existsMap = jclTopic.exists(properties);
 		
 		if(!existsMap) {
-			jclTopic.create(properties);
-			
 			JCL_result jclResultHeader = new JCL_resultImpl();
 			ProducerRecord<String, JCL_result> producedRecord;
 			
@@ -234,12 +232,20 @@ public class JCLHashMapPacu<K,V>
 		
     	try {
     		if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
-				while ((jclResultResource = localResourceMapContainer.read(gvNameKafka)) == null);
-			}
+    			jclResultResource = localResourceMapContainer.read(gvNameKafka);
+    		}
+    		
+    		if(jclResultResource == null) {
+    			return (V) new JCL_resultImpl();
+    		}
     		
 			if((jclResultResource.isFinished() == false) || (jclResultResource.getNumOfRegisters() != 0)){
-				while ((jclResult = jclResultResource.read(key.toString())) == null);
+				jclResult = jclResultResource.read(key.toString());
 			}
+			
+			if(jclResult == null) {
+    			return (V) new JCL_resultImpl();
+    		}
 		} catch (Exception e){
 			jclResult.setCorrectResult("no result");
 			
