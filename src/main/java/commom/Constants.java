@@ -101,6 +101,9 @@ public final class Constants {
 		public static final String MAP_HEADER_SIZE = "MHS";
 		public static final String MAP_PUT = "MP";
 		public static final String MAP_REMOVE = "MR";
+		public static final String MAP_LOCK = "ML";
+		public static final String MAP_ACQUIRE = "3";
+		public static final String MAP_RELEASE = "2";
 		
 		public static final String LOCK_PREFIX = "LOCK";
 	}

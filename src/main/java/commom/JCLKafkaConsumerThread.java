@@ -160,6 +160,73 @@ public class JCLKafkaConsumerThread extends Thread {
 						
 						localResourceMapContainer.create(record.topic(), newMapResource);
 						break;
+					
+					case Constants.Environment.MAP_LOCK:
+						JCLResultResource mapLock = null;
+						
+						try {
+							if((localResourceMapContainer.isFinished()==false) || (localResourceMapContainer.getNumOfRegisters()!=0)){
+								while ((mapLock = localResourceMapContainer.read(record.topic())) == null);
+							}
+							
+							JCL_result mapLockOffset = new JCL_resultImpl();
+							mapLockOffset.setCorrectResult(record.offset());
+							
+							mapLock.create(
+								record.topic() + ":" + Constants.Environment.LOCK_PREFIX + ":" + record.value().getCorrectResult(), 
+								mapLockOffset
+							);
+							
+							localResourceMapContainer.create(record.topic(), mapLock);
+						} catch (Exception e) {
+							System.err
+								.println("problem in JCLKafkaConsumerThread case: " + Constants.Environment.MAP_LOCK);
+						}
+						break;
+						
+					case Constants.Environment.MAP_ACQUIRE:
+						JCLResultResource mapAcquire = null;
+						
+						try {
+							if((localResourceMapContainer.isFinished()==false) || (localResourceMapContainer.getNumOfRegisters()!=0)){
+								while ((mapAcquire = localResourceMapContainer.read(record.topic())) == null);
+							}
+							
+							mapAcquire.create(
+								record.topic() + ":" + Constants.Environment.MAP_ACQUIRE, 
+								record.value()
+							);
+							
+							localResourceMapContainer.create(record.topic(), mapAcquire);
+						} catch (Exception e) {
+							System.err
+								.println("problem in JCLKafkaConsumerThread case: " + Constants.Environment.MAP_ACQUIRE);
+						}
+						break;
+					
+					case Constants.Environment.MAP_RELEASE:
+						JCLResultResource mapRelease = null;
+						
+						try {
+							if((localResourceMapContainer.isFinished()==false) || (localResourceMapContainer.getNumOfRegisters()!=0)){
+								while ((mapRelease = localResourceMapContainer.read(record.topic())) == null);
+							}
+							
+							JCL_result jclResultLockToken = mapRelease.read(record.topic() + ":" + Constants.Environment.MAP_ACQUIRE);
+							
+							mapRelease.delete(
+								record.topic() + ":" + Constants.Environment.LOCK_PREFIX + ":" + jclResultLockToken.getCorrectResult()
+							);
+							
+							mapRelease.delete(
+								record.topic() + ":" + Constants.Environment.MAP_ACQUIRE
+							);
+						} catch (Exception e1) {
+							System.err
+								.println("Problem in JCLKafkaConsumerThread case " + Constants.Environment.MAP_RELEASE);
+							e1.printStackTrace();
+						}
+						break;
 						
 					default:
 						JCLResultResource aux = null;

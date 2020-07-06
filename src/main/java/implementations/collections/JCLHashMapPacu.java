@@ -28,6 +28,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
+import java.util.UUID;
+import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -171,12 +173,6 @@ public class JCLHashMapPacu<K,V>
     	return keyMapped;
     }
     
-    private String getKeyNameMapped(Object mapName, Object key) {
-    	String keyMapped = Constants.Environment.MAP_PREFIX + key;
-    	
-    	return keyMapped;
-    }
-    
     /**
      * Returns the number of key-value mappings in this map.
      *
@@ -254,14 +250,91 @@ public class JCLHashMapPacu<K,V>
     	V oldValue = null;
     	
         if (key != null) {
-        	String keyNameMapped = this.getKeyNameMapped(this.gvName, key);
-        	
-        	oldValue = (V) JCLHashMapPacu.DEFAULT_JCL.getValueLocking(keyNameMapped).getCorrectResult();
+        	JCLResultResource selfMapResource = null;
+    		JCL_result jclResult = null;
+    		JCL_result jclResultLockToken = new JCL_resultImpl();
+    		String lockToken = UUID.randomUUID().toString();
+
+    		jclResultLockToken.setCorrectResult(lockToken);
+
+    		kafkaProducer.send(
+    			new ProducerRecord<>(
+					gvNameKafka,
+    				Constants.Environment.MAP_LOCK,
+    				jclResultLockToken
+    			)
+    		);
+    		
+    		try {
+    			if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
+        			while((selfMapResource = localResourceMapContainer.read(gvNameKafka)) == null);
+        		}
+
+    			if((selfMapResource.isFinished()==false) || (selfMapResource.getNumOfRegisters()!=0)){
+    				while ((jclResult = selfMapResource.read(gvNameKafka + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null);
+    			}
+
+    			while(!canAcquireMap(gvNameKafka, lockToken));
+    			
+    			kafkaProducer
+    				.send(new ProducerRecord<>(
+    					key.toString(),
+    					Constants.Environment.MAP_ACQUIRE,
+    					jclResultLockToken
+    				));
+
+    			if((selfMapResource.isFinished()==false) || (selfMapResource.getNumOfRegisters()!=0)){
+    				while ((jclResult = selfMapResource.read(key.toString())) == null);
+    			}
+    			
+    			return (V) jclResult.getCorrectResult();
+    		} catch (Exception e){
+    			System.err
+    				.println("problem in JCL facade getValueLocking(Object " + key + ")");
+    			e.printStackTrace();
+    			
+    			jclResult.setErrorResult(e);
+    			
+    			return null;
+    		}
         }else{
         	System.out.println("Can't get<K,V> with null key!");
-        }        
+        }
+        
         return (oldValue == null ? null : oldValue);
     }
+    
+    private boolean canAcquireMap (Object key, String lockToken) {
+		Entry<String, JCL_result> minEntry = null;
+		JCLResultResource selfMapResource = null;
+		String prefix = gvNameKafka + ":" + Constants.Environment.LOCK_PREFIX + ":";
+		
+		try {
+			if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
+				while((selfMapResource = localResourceMapContainer.read(gvNameKafka)) == null);
+			}
+			
+			for (Entry<String, JCL_result> entry : selfMapResource.entrySet()) {
+				if(entry.getKey().startsWith(prefix)) {				
+					if (minEntry == null || Long.parseLong(entry.getValue().getCorrectResult().toString()) < Long.parseLong(minEntry.getValue().getCorrectResult().toString())) {
+						minEntry = entry;
+					}
+				}
+			}
+			
+//			System.out.println("2 " + Thread.currentThread().getId() + " -> " + key + " : " + lockToken + " : " + minEntry.getValue().getCorrectResult());
+			if(minEntry != null && minEntry.getKey().toString().contains(lockToken)) {
+//				System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|IF minEntry{key:" + minEntry.getKey() + ",value:" + minEntry.getValue().getCorrectResult());
+				return true;
+			}
+		} catch (Exception e) {
+			System.err
+				.println("Problem in JCLHashMapPacu canAcquireMap(" + key + ")");
+			e.printStackTrace();
+		}
+		
+		return false;
+	}
 
     /**
      * Returns <tt>true</tt> if this map contains a mapping for the
@@ -339,26 +412,49 @@ public class JCLHashMapPacu<K,V>
      */
     
     public V putUnlock(K key, V value){
-    	V oldValue = null;
-        if (key != null){        	
-        	if(DEFAULT_JCL.containsGlobalVar(key.toString()+"¬Map¬"+gvName)){
-        		oldValue = (V) DEFAULT_JCL.getValue(key.toString()+"¬Map¬"+gvName).getCorrectResult();
-        		DEFAULT_JCL.setValueUnlocking((key.toString()+"¬Map¬"+gvName), value);
-        	}else if (DEFAULT_JCL.instantiateGlobalVar((key.toString()+"¬Map¬"+gvName), value)){
-    			
-    			// ################ Serialization key ########################
-    			LinkedBuffer buffer = LinkedBuffer.allocate(1048576);
-    			ObjectWrap objW = new ObjectWrap(key);	
-    			Schema scow = RuntimeSchema.getSchema(ObjectWrap.class);
-    			byte[] k = ProtobufIOUtil.toByteArray(objW,scow, buffer);			
-    			// ################ Serialization key ########################
+    	JCLResultResource selfMap = null;
+        JCL_result jclResult = new JCL_resultImpl();
+        Object[] pair = {
+			key,
+			value
+		};
 
-        		super.hashAdd(gvName,ByteBuffer.wrap(k),idLocalize);
-    		}
-        }else{
-       	 System.out.println("Can't put<K,V> with null key!");
-        }        
-        return (oldValue == null ? null : oldValue);
+		try {
+			jclResult.setCorrectResult(pair);
+			
+			kafkaProducer.send(
+				new ProducerRecord<>(
+					gvNameKafka,
+					Constants.Environment.MAP_PUT,
+					jclResult
+				)
+			);
+			
+			kafkaProducer.send(
+				new ProducerRecord<>(
+					gvNameKafka,
+					Constants.Environment.MAP_RELEASE,
+					new JCL_resultImpl()
+				)
+			);
+			
+			if((localResourceMapContainer.isFinished()==false) || (localResourceMapContainer.getNumOfRegisters()!=0)){
+				while ((selfMap = localResourceMapContainer.read(gvNameKafka)) == null);
+			}
+			
+			if((selfMap.isFinished()==false) || (selfMap.getNumOfRegisters()!=0)){
+				while (selfMap.read(key + ":" + Constants.Environment.MAP_ACQUIRE) != null);
+			}
+			
+			return value;
+			
+		} catch (Exception e) {
+			System.err.println("problem in JCL facade setValueUnlocking(Object " + key + ", Object " + value + ")");
+			
+			e.printStackTrace();
+			
+			return null;
+		}
     }
 
     /**
