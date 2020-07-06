@@ -1,6 +1,7 @@
 package commom;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
@@ -55,7 +56,7 @@ public class JCLKafkaConsumerThread extends Thread {
 				
 				records.forEach(record -> {
 //					System.out.print("");
-//					System.out.println(record);
+//					System.out.println(record.key() + ":" + record);
 //					System.out.println("record t:" + record.topic() + ", k:" + record.key() + ", v:" + record.value().getCorrectResult() + ", o:" + record.offset());
 					
 					switch(record.key()) {
@@ -115,6 +116,51 @@ public class JCLKafkaConsumerThread extends Thread {
 						);
 						break;
 					
+					case Constants.Environment.MAP_PUT:
+						JCLResultResource mapAux = null;
+						
+						try {
+							if((localResourceMapContainer.isFinished()==false) || (localResourceMapContainer.getNumOfRegisters()!=0)){
+								if ((mapAux = localResourceMapContainer.read(record.topic())) == null) {
+									JCL_result jclResultInitHeader = new JCL_resultImpl();
+									int size = 0;
+									
+									mapAux = new JCLResultResource();
+									jclResultInitHeader.setCorrectResult(size);
+									
+									mapAux.create(Constants.Environment.MAP_HEADER_SIZE, jclResultInitHeader);
+								}
+							}
+							
+							JCL_result mapHeader = mapAux.read(Constants.Environment.MAP_HEADER_SIZE);
+							int size = (int) mapHeader.getCorrectResult();
+							size = size + 1;
+							mapHeader.setCorrectResult(size);
+							
+							mapAux.create(Constants.Environment.MAP_HEADER_SIZE, mapHeader);
+							
+							ArrayList<Object> mapRecordPair = (ArrayList<Object>) record.value().getCorrectResult();
+							JCL_result mapValue = new JCL_resultImpl();
+							mapValue.setCorrectResult(mapRecordPair.get(1));
+							mapAux.create(mapRecordPair.get(0).toString(), mapValue);
+							
+							localResourceMapContainer.create(record.topic(), mapAux);
+						} catch (Exception e){
+							System.err
+								.println("problem in JCLKafkaConsumerThread");
+							e.printStackTrace();
+						}
+						break;
+						
+					case Constants.Environment.MAP_INIT:
+						JCLResultResource newMapResource = new JCLResultResource();
+						JCL_result jclResultInitHeader = record.value();
+						
+						newMapResource.create(Constants.Environment.MAP_HEADER_SIZE, jclResultInitHeader);
+						
+						localResourceMapContainer.create(record.topic(), newMapResource);
+						break;
+						
 					default:
 						JCLResultResource aux = null;
 						

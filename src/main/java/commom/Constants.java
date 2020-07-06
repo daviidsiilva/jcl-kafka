@@ -97,8 +97,12 @@ public final class Constants {
 		
 		public static final String MAP_PREFIX = "MAP";
 		public static final String MAP_HEADER = "HEADER";
+		public static final String MAP_INIT = "MI";
+		public static final String MAP_HEADER_SIZE = "MHS";
+		public static final String MAP_PUT = "MP";
+		public static final String MAP_REMOVE = "MR";
+		
 		public static final String LOCK_PREFIX = "LOCK";
-
 	}
 	
 	public final static class IoT{

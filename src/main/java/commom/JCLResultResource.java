@@ -36,10 +36,6 @@ public class JCLResultResource {
 		}
 		else {
 //			System.out.println("C " + Thread.currentThread().getId() + " @ " + key);
-//			if(finished == false) {
-////				System.out.println("D " + Thread.currentThread().getId() + " @ " + key);
-//				suspend();
-//			}
 			return null;	
 		}
 	}

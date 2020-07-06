@@ -127,7 +127,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				}
 
 				if(isPacu) {
-					JCLTopic jclTopic = JCLTopic.getInstance();
+//					JCLTopic jclTopic = JCLTopic.getInstance();
 					String topicName = task.getTaskID() + hostAddress.replace(".", "");
 					Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 					topicProperties.put("topic.name", topicName);					
@@ -182,7 +182,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						}
 						
 						if(isPacu) {
-							JCLTopic jclTopic = JCLTopic.getInstance();
+//							JCLTopic jclTopic = JCLTopic.getInstance();
 							String topicName = task.getTaskID() + hostAddress.replace(".", "");
 							Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
 							topicProperties.put("topic.name", topicName);
