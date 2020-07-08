@@ -116,7 +116,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	private static JCLResultResource localResourceGlobalVar;
 	private static JCLResultResource localResourceExecute;
-	private static JCLResultResourceContainer localResourceMapContainer;
+	public static JCLResultResourceContainer localResourceMapContainer;
 	
 	private JCLKafkaConsumerThread jclKafkaConsumer;
 	/** 3.0 end **/
@@ -1213,30 +1213,17 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	synchronized public boolean instantiateGlobalVar(Object key, Object instance) {
-		ProducerRecord<String, JCL_result> producedRecord;
-		
-		if(!containsGlobalVar(key)) {
-			Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-			
-			topicProperties.put("topic.name", key.toString());
-			
-			JCLTopic jclTopic = JCLTopic.getInstance();
-			
-			jclTopic.create(topicProperties);
-		}
-		
 		JCL_result jclResultInstance = new JCL_resultImpl();
 		
 		jclResultInstance.setCorrectResult(instance);
 		
-		producedRecord = new ProducerRecord<>(
-			key.toString(),
-			Constants.Environment.GLOBAL_VAR_KEY,
-		    jclResultInstance
-		);
-		
 		kafkaProducer
-			.send(producedRecord);
+			.send(new ProducerRecord<>(
+				key.toString(),
+				Constants.Environment.GLOBAL_VAR_KEY,
+			    jclResultInstance
+			)
+		);
 		
 		return true;
 	}

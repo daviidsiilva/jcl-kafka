@@ -41,10 +41,9 @@ public class JCLKafkaConsumerThread extends Thread {
 		try {
 			consumer.subscribe(
 				Pattern.compile(
-					"^[a-zA-Z0-9]+$"
+					"^(?!MAP).*$"
 				)
 			);
-			
 			consumer.seekToBeginning(consumer.assignment());
 			
 			synchronized (this) {

@@ -40,6 +40,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import commom.Constants;
+import commom.JCLKafkaMapConsumerThread;
 import commom.JCLResultResource;
 import commom.JCLResultResourceContainer;
 import commom.JCLResultSerializer;
@@ -91,6 +92,7 @@ public class JCLHashMapPacu<K,V>
     private Producer<String, JCL_result> kafkaProducer;
     private static JCLResultResourceContainer localResourceMapContainer;
     private String gvNameKafka;
+    private static JCLKafkaMapConsumerThread mapConsumer;
     /** end 3.0 **/
     
     /**
@@ -114,7 +116,7 @@ public class JCLHashMapPacu<K,V>
     
     public JCLHashMapPacu(String gvName, JCLResultResourceContainer localResourceMapContainerParam){
     	this.gvName = gvName;
-    	localResourceMapContainer = localResourceMapContainerParam;
+//    	localResourceMapContainer = localResourceMapContainerParam;
     	
     	//Get Pacu
     	Properties properties = new Properties();
@@ -131,21 +133,33 @@ public class JCLHashMapPacu<K,V>
     
     // internal utilities
     private void initKafka(String gvName){
+    	if(localResourceMapContainer == null) {
+			localResourceMapContainer = new JCLResultResourceContainer();
+		}
+		
+		mapConsumer = new JCLKafkaMapConsumerThread(localResourceMapContainer);
+		
+		try {
+			mapConsumer.start();
+			synchronized(mapConsumer) {
+				mapConsumer.wait();
+			}
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		
     	this.gvNameKafka = getKeyNameMapped(gvName);
     	
     	Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
     	JCLTopic jclTopic = JCLTopic.getInstance();
-//		
+    	
     	properties.put("topic.name", gvNameKafka);
-//    	properties.put("transactional.id", gvNameKafka);
 		
     	kafkaProducer = new KafkaProducer<>(
 			properties,
 			new StringSerializer(),
 			new JCLResultSerializer()
 		);
-    	
-//    	kafkaProducer.initTransactions();
 		
 		boolean existsMap = jclTopic.exists(properties);
 		
@@ -278,7 +292,7 @@ public class JCLHashMapPacu<K,V>
     			
     			kafkaProducer
     				.send(new ProducerRecord<>(
-    					key.toString(),
+    					gvNameKafka,
     					Constants.Environment.MAP_ACQUIRE,
     					jclResultLockToken
     				));
