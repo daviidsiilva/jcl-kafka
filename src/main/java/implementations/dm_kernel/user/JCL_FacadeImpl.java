@@ -116,7 +116,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	private static JCLResultResource localResourceGlobalVar;
 	private static JCLResultResource localResourceExecute;
-	public static JCLResultResourceContainer localResourceMapContainer;
 	
 	private JCLKafkaConsumerThread jclKafkaConsumer;
 	/** 3.0 end **/
@@ -245,12 +244,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		localResourceGlobalVar = new JCLResultResource();
 		localResourceExecute = new JCLResultResource();
-		localResourceMapContainer = new JCLResultResourceContainer();
 		
 		jclKafkaConsumer = new JCLKafkaConsumerThread(
 			localResourceGlobalVar, 
-			localResourceExecute, 
-			localResourceMapContainer
+			localResourceExecute
 		);
 		
 		try {
@@ -1951,7 +1948,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public static <K, V> Map<K, V> GetHashMap(String gvName){
 		getInstance();
 		
-		return new JCLHashMap<K, V>(gvName, localResourceMapContainer);
+		return new JCLHashMap<K, V>(gvName);
 	}
 
 	//Get HashMap

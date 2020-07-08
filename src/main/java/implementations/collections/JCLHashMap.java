@@ -42,25 +42,6 @@ public class JCLHashMap<K,V>
     }
     
     /**
-     * Constructs with HashMap name.
-     */
-    public JCLHashMap(String gvName, JCLResultResourceContainer localResourceMapContainer){
-    	
-    	//Started JCL Map on Lambari version
-    	if (DEFAULT_JCL instanceof implementations.sm_kernel.JCL_FacadeImpl){
-    		if (colletionMap.containsKey(gvName)){
-    			currentMap = colletionMap.get(gvName);
-    		}else{
-        		currentMap = new HashMap<K,V>();
-        		colletionMap.put(gvName, currentMap);
-    		}
-    	//Started JCL Map on Pacu version  	
-    	}else{
-    		currentMap = new JCLHashMapPacu<K, V>(gvName, localResourceMapContainer); 
-    	}
-    }
-    
-    /**
      * Returns the number of key-value mappings in this map.
      *
      * @return the number of key-value mappings in this map

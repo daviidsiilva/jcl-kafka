@@ -114,23 +114,6 @@ public class JCLHashMapPacu<K,V>
 		this.initKafka(gvName);
     }
     
-    public JCLHashMapPacu(String gvName, JCLResultResourceContainer localResourceMapContainerParam){
-    	this.gvName = gvName;
-//    	localResourceMapContainer = localResourceMapContainerParam;
-    	
-    	//Get Pacu
-    	Properties properties = new Properties();
-		try {
-			properties.load(new FileInputStream(Constants.Environment.JCLConfig()));
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-    	
-		DEFAULT_JCL = super.getInstancePacu(properties);
-    	
-		initKafka(gvName);
-    }
-    
     // internal utilities
     private void initKafka(String gvName){
     	if(localResourceMapContainer == null) {
