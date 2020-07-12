@@ -85,6 +85,10 @@ public final class Constants {
 		public static final String JCLKafkaConfig() {
 			return "../jcl_conf/kafkaconfig.properties";
 		}
+		
+		public static final String JCLKafkaMapConfig() {
+			return "../jcl_conf/kafkamapconfig.properties";
+		}
 	
 		public static final String GLOBAL_VAR_KEY = "GVK";
 		public static final String GLOBAL_VAR_LOCK_KEY = "GVLK";
@@ -97,6 +101,7 @@ public final class Constants {
 		
 		public static final String MAP_PREFIX = "MAP";
 		public static final String MAP_HEADER = "HEADER";
+		public static final String MAP_KEY_SUFFIX = "-";
 		public static final String MAP_INIT = "MI";
 		public static final String MAP_HEADER_SIZE = "MHS";
 		public static final String MAP_PUT = "MP";

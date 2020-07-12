@@ -129,7 +129,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						Constants.Environment.EXECUTE_KEY,
 						jResult
 					);
-					System.out.println(producedRecord);
+					
 					kafkaProducer
 						.send(producedRecord);				
 				}
@@ -179,7 +179,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 								Constants.Environment.EXECUTE_KEY,
 								jResult
 							);
-							System.out.println(producedRecord);
+							
 							kafkaProducer
 								.send(producedRecord);
 						}

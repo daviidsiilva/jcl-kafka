@@ -59,7 +59,6 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -67,7 +66,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -1792,7 +1790,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		Properties properties = KafkaConfigProperties.getInstance().get();
 		properties.put("topic.name", key);
 		
-		boolean exists = jclTopicAdmin.exists(properties);
+		boolean exists = false;
+		
+		try {
+			exists = (localResourceGlobalVar.read(key.toString()) != null) || jclTopicAdmin.exists(properties);
+		} catch (Exception e) {
+			System.err
+				.println("problem in boolean containsGlobalVar(" + key + ")");
+			e.printStackTrace();
+		}
 		
 		return exists;
 	}

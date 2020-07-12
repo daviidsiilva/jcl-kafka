@@ -12,8 +12,10 @@ import io.protostuff.ProtobufIOUtil;
 import io.protostuff.Schema;
 import io.protostuff.runtime.RuntimeSchema;
 import java.io.*;
+import java.net.InetAddress;
+
 import implementations.util.ByteBuffer;
-import implementations.util.KafkaConfigProperties;
+import implementations.util.KafkaMapConfigProperties;
 
 import java.util.AbstractCollection;
 import java.util.AbstractSet;
@@ -29,8 +31,10 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -38,7 +42,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import commom.Constants;
-import commom.JCLKafkaMapConsumerThread;
+import commom.KafkaMapConsumerThread;
 import commom.JCLResultResource;
 import commom.JCLResultResourceContainer;
 import commom.JCLResultSerializer;
@@ -90,8 +94,13 @@ public class JCLHashMapPacu<K,V>
     private Producer<String, JCL_result> kafkaProducer;
     private static JCLResultResourceContainer localResourceMapContainer;
     private String gvNameKafka;
-    private static JCLKafkaMapConsumerThread mapConsumer;
-    private static JCLTopicAdmin jclTopic;
+    
+    private static JCLTopicAdmin jclTopicAdmin;
+    
+    private static List<String> subscribedTopics;
+    private static KafkaMapConsumerThread kafkaMapConsumerThread;
+    private static JCLResultResource localResourceMap;
+    private static KafkaMapConfigProperties kafkaMapConfigProperties;
     /** end 3.0 **/
     
     /**
@@ -115,35 +124,55 @@ public class JCLHashMapPacu<K,V>
     
     // internal utilities
     private void initKafka(String gvName){
-    	if(localResourceMapContainer == null) {
-			localResourceMapContainer = new JCLResultResourceContainer();
+    	this.gvNameKafka = getMapNameMappedToKafka(gvName);
+    	Properties kafkaProperties = new Properties();
+    	
+    	try {
+			kafkaProperties.load(new FileInputStream(Constants.Environment.JCLKafkaMapConfig()));
+		} catch (IOException e1) {
+			e1.printStackTrace();
 		}
-		
-		mapConsumer = new JCLKafkaMapConsumerThread(localResourceMapContainer);
-		
-		try {
-			mapConsumer.start();
-			synchronized(mapConsumer) {
-				mapConsumer.wait();
+    	
+    	if(localResourceMap == null) {
+    		try {
+				String groupId = "jcl-" + InetAddress.getLocalHost().getHostAddress() + "-" + UUID.randomUUID().toString();
+				kafkaProperties.put("group.id", groupId);
+				
+				kafkaProperties.store(new FileOutputStream(Constants.Environment.JCLKafkaMapConfig()), null);
+			} catch (IOException e) {
+				e.printStackTrace();
 			}
-		} catch (InterruptedException e) {
-			e.printStackTrace();
+    		
+			localResourceMap = new JCLResultResource();
+			
+			subscribedTopics = new CopyOnWriteArrayList<String>();
+			subscribedTopics.add(gvNameKafka);
+
+			kafkaMapConsumerThread = new KafkaMapConsumerThread(
+				subscribedTopics, 
+				localResourceMap
+			);
+			
+			try {
+				kafkaMapConsumerThread.start();
+				synchronized(kafkaMapConsumerThread) {
+					kafkaMapConsumerThread.wait();
+				}
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
 		}
-		
-    	this.gvNameKafka = getKeyNameMapped(gvName);
     	
-    	Properties properties = KafkaConfigProperties.getInstance().get();
-    	jclTopic = JCLTopicAdmin.getInstance();
-    	
-    	properties.put("topic.name", gvNameKafka);
-		
     	kafkaProducer = new KafkaProducer<>(
-			properties,
+			kafkaProperties,
 			new StringSerializer(),
 			new JCLResultSerializer()
 		);
+    	
+    	jclTopicAdmin = JCLTopicAdmin.getInstance();
 		
-		boolean existsMap = jclTopic.exists(properties);
+    	kafkaProperties.put("topic.name", gvNameKafka);
+		boolean existsMap = jclTopicAdmin.exists(kafkaProperties);
 		
 		if(!existsMap) {
 			JCL_result jclResultHeader = new JCL_resultImpl();
@@ -158,15 +187,22 @@ public class JCLHashMapPacu<K,V>
 				jclResultHeader
 			);
 			
-			kafkaProducer
-				.send(producedRecord);
+			kafkaProducer.send(
+				new ProducerRecord<>(
+					gvNameKafka,
+					Constants.Environment.MAP_INIT,
+					jclResultHeader
+				)
+			);
 		}
     }
 
-    private String getKeyNameMapped(Object key) {
-    	String keyMapped = Constants.Environment.MAP_PREFIX + key;
-    	
-    	return keyMapped;
+    private String getMapNameMappedToKafka(Object key) {
+    	return Constants.Environment.MAP_PREFIX + key;
+    }
+    
+    private String getMapKeyMappedToKafka(Object key) {
+    	return gvNameKafka + Constants.Environment.MAP_KEY_SUFFIX + key;	
     }
     
     /**
@@ -216,16 +252,25 @@ public class JCLHashMapPacu<K,V>
      */
     public V get(Object key){
     	JCL_result jclResult = new JCL_resultImpl();
-    	JCLResultResource jclResultResource = null;
+    	String keyMappedToKafka = getMapKeyMappedToKafka(key);
+    	AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
+		checkedIfExistsOnServer.set(false);
 		
     	try {
-    		if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
-    			while((jclResultResource = localResourceMapContainer.read(gvNameKafka)) == null);
+    		if((localResourceMap.isFinished() == false) || (localResourceMap.getNumOfRegisters() != 0)){
+    			while((jclResult = localResourceMap.read(keyMappedToKafka)) == null) {
+    				if(!subscribedTopics.contains(keyMappedToKafka)) {
+						subscribedTopics.add(keyMappedToKafka);
+						kafkaMapConsumerThread.wakeup();
+					} else if(!checkedIfExistsOnServer.get()) { 
+						checkedIfExistsOnServer.set(true);
+						
+						if(!containsKey(key)) {
+							return null;
+						}
+					}
+    			};
     		}
-    		
-			if((jclResultResource.isFinished() == false) || (jclResultResource.getNumOfRegisters() != 0)){
-				while((jclResult = jclResultResource.read(key.toString())) == null);
-			}
 		} catch (Exception e){
 			jclResult.setCorrectResult("no result");
 			
@@ -245,42 +290,65 @@ public class JCLHashMapPacu<K,V>
     public V getLock(Object key){
     	V oldValue = null;
     	
-        if (key != null) {
-        	JCLResultResource selfMapResource = null;
-    		JCL_result jclResult = null;
+    	if(true) {
+    		JCL_result jclResult = new JCL_resultImpl();
     		JCL_result jclResultLockToken = new JCL_resultImpl();
     		String lockToken = UUID.randomUUID().toString();
-
+    		String topicName = getMapKeyMappedToKafka(key);
+    		AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
+    		
+    		checkedIfExistsOnServer.set(false);
     		jclResultLockToken.setCorrectResult(lockToken);
 
     		kafkaProducer.send(
     			new ProducerRecord<>(
-					gvNameKafka,
+    				topicName,
     				Constants.Environment.MAP_LOCK,
     				jclResultLockToken
     			)
     		);
     		
     		try {
-    			if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
-        			while((selfMapResource = localResourceMapContainer.read(gvNameKafka)) == null);
-        		}
-
-    			if((selfMapResource.isFinished()==false) || (selfMapResource.getNumOfRegisters()!=0)){
-    				while ((jclResult = selfMapResource.read(gvNameKafka + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null);
+    			if((localResourceMap.isFinished()==false) || (localResourceMap.getNumOfRegisters()!=0)){
+    				while ((jclResult = localResourceMap.read(topicName + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null) {
+    					if(!subscribedTopics.contains(topicName)) {
+    						subscribedTopics.add(topicName);
+    						kafkaMapConsumerThread.wakeup();
+    						
+    					} else if(!checkedIfExistsOnServer.get()) {
+    						checkedIfExistsOnServer.set(true);
+    						
+    						if(!containsKey(key)) {
+    							return null;
+    						}
+    					}
+    				};
     			}
 
-    			while(!canAcquireMap(gvNameKafka, lockToken));
-    			
-    			kafkaProducer
-    				.send(new ProducerRecord<>(
-    					gvNameKafka,
+    			while(!canAcquireMapKey(topicName, lockToken));			
+
+    			kafkaProducer.send(
+    				new ProducerRecord<>(
+						topicName,
     					Constants.Environment.MAP_ACQUIRE,
     					jclResultLockToken
-    				));
+    				)
+    			);
 
-    			if((selfMapResource.isFinished()==false) || (selfMapResource.getNumOfRegisters()!=0)){
-    				while ((jclResult = selfMapResource.read(key.toString())) == null);
+    			if((localResourceMap.isFinished()==false) || (localResourceMap.getNumOfRegisters()!=0)){
+    				while ((jclResult = localResourceMap.read(topicName)) == null) {
+    					if(!subscribedTopics.contains(topicName)) {
+    						subscribedTopics.add(topicName);
+    						kafkaMapConsumerThread.wakeup();
+    						
+    					} else if(!checkedIfExistsOnServer.get()) {
+    						checkedIfExistsOnServer.set(true);
+    						
+    						if(!containsKey(key)) {
+    							return null;
+    						}
+    					}
+    				}
     			}
     			
     			return (V) jclResult.getCorrectResult();
@@ -293,34 +361,25 @@ public class JCLHashMapPacu<K,V>
     			
     			return null;
     		}
-        }else{
-        	System.out.println("Can't get<K,V> with null key!");
-        }
+    	}
         
         return (oldValue == null ? null : oldValue);
     }
     
-    private boolean canAcquireMap (Object key, String lockToken) {
+    private boolean canAcquireMapKey (Object key, String lockToken) {
 		Entry<String, JCL_result> minEntry = null;
-		JCLResultResource selfMapResource = null;
-		String prefix = gvNameKafka + ":" + Constants.Environment.LOCK_PREFIX + ":";
+		String prefix = key + ":" + Constants.Environment.LOCK_PREFIX + ":";
 		
 		try {
-			if((localResourceMapContainer.isFinished() == false) || (localResourceMapContainer.getNumOfRegisters() != 0)){
-				while((selfMapResource = localResourceMapContainer.read(gvNameKafka)) == null);
-			}
-			
-			for (Entry<String, JCL_result> entry : selfMapResource.entrySet()) {
-				if(entry.getKey().startsWith(prefix)) {				
+			for (Entry<String, JCL_result> entry : localResourceMap.entrySet()) {
+				if(entry.getKey().startsWith(prefix)) {
 					if (minEntry == null || Long.parseLong(entry.getValue().getCorrectResult().toString()) < Long.parseLong(minEntry.getValue().getCorrectResult().toString())) {
 						minEntry = entry;
 					}
 				}
 			}
 			
-//			System.out.println("2 " + Thread.currentThread().getId() + " -> " + key + " : " + lockToken + " : " + minEntry.getValue().getCorrectResult());
 			if(minEntry != null && minEntry.getKey().toString().contains(lockToken)) {
-//				System.out.println(KafkaConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|IF minEntry{key:" + minEntry.getKey() + ",value:" + minEntry.getValue().getCorrectResult());
 				return true;
 			}
 		} catch (Exception e) {
@@ -341,17 +400,15 @@ public class JCLHashMapPacu<K,V>
      * key.
      */
     public boolean containsKey(Object key){
-    	boolean contains = false;
-    	
-    	try {
-			if(localResourceMapContainer.read(gvNameKafka).read(key.toString()) != null) {
-				contains = true;
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+    	key = getMapKeyMappedToKafka(key);
+    	Properties properties = KafkaMapConfigProperties.getInstance().get();
+		properties.put("topic.name", key);
 		
-    	return contains;
+		boolean contains = false;
+		
+		contains = jclTopicAdmin.exists(properties);
+		
+		return contains;
     }
     
     final Entry<K,V> getEntry(Object key) {
@@ -371,18 +428,18 @@ public class JCLHashMapPacu<K,V>
      */
     
     public V put(K key, V value){
+    	String topicName = getMapKeyMappedToKafka(key);
     	JCL_result jclResultInstance = new JCL_resultImpl();
-		Object[] pair = {
-			key,
-			value
-		};
+    	
+    	subscribedTopics.add(topicName);
+    	kafkaMapConsumerThread.wakeup();
 		
-		jclResultInstance.setCorrectResult(pair);
+		jclResultInstance.setCorrectResult(value);
 		
 		try {
 			kafkaProducer.send(
 				new ProducerRecord<>(
-					gvNameKafka,
+					topicName,
 					Constants.Environment.MAP_PUT,
 					jclResultInstance
 				)
@@ -410,6 +467,7 @@ public class JCLHashMapPacu<K,V>
     public V putUnlock(K key, V value){
     	JCLResultResource selfMap = null;
         JCL_result jclResult = new JCL_resultImpl();
+        String topicName = getMapKeyMappedToKafka(key);
         Object[] pair = {
 			key,
 			value
@@ -420,7 +478,7 @@ public class JCLHashMapPacu<K,V>
 			
 			kafkaProducer.send(
 				new ProducerRecord<>(
-					gvNameKafka,
+					topicName,
 					Constants.Environment.MAP_PUT,
 					jclResult
 				)
@@ -428,18 +486,14 @@ public class JCLHashMapPacu<K,V>
 			
 			kafkaProducer.send(
 				new ProducerRecord<>(
-					gvNameKafka,
+					topicName,
 					Constants.Environment.MAP_RELEASE,
 					new JCL_resultImpl()
 				)
 			);
 			
-			if((localResourceMapContainer.isFinished()==false) || (localResourceMapContainer.getNumOfRegisters()!=0)){
-				while ((selfMap = localResourceMapContainer.read(gvNameKafka)) == null);
-			}
-			
-			if((selfMap.isFinished()==false) || (selfMap.getNumOfRegisters()!=0)){
-				while (selfMap.read(key + ":" + Constants.Environment.MAP_ACQUIRE) != null);
+			if((localResourceMap.isFinished()==false) || (localResourceMap.getNumOfRegisters()!=0)){
+				while (localResourceMap.read(topicName + ":" + Constants.Environment.MAP_ACQUIRE) != null);
 			}
 			
 			return value;
