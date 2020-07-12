@@ -118,7 +118,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private static JCLResultResource localResourceGlobalVar;
 	private static JCLResultResource localResourceExecute;
 	private static List<String> subscribedTopics;
-	private KafkaConsumerThread kct;
+	private static KafkaConsumerThread kct;
 	private static JCLTopicAdmin jclTopicAdmin;
 	/** 3.0 end **/
 	
@@ -2469,7 +2469,12 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 				try {
 					if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
-						while ((resultF = localResourceExecute.read(topicName)) == null);
+						while ((resultF = localResourceExecute.read(topicName)) == null) {
+							if(!subscribedTopics.contains(topicName)) {
+								subscribedTopics.add(topicName);
+								kct.wakeup();
+							}
+						}
 					}
 				} catch (Exception e){
 					System.err
