@@ -2140,7 +2140,6 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				kafkaProperties.load(new FileInputStream(Constants.Environment.JCLKafkaConfig()));
 				
 				String groupId = "jcl-" + InetAddress.getLocalHost().getHostAddress() + "-" + UUID.randomUUID().toString();
-				System.out.println("groupId -> " + groupId);
 				kafkaProperties.put("group.id", groupId);
 				
 				kafkaProperties.store(new FileOutputStream(Constants.Environment.JCLKafkaConfig()), null);
