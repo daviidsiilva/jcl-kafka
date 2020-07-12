@@ -21,19 +21,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.google.common.primitives.Primitives;
 
 import commom.JCLResultSerializer;
 import commom.Constants;
-import implementations.dm_kernel.JCLTopic;
-import implementations.util.JCLConfigProperties;
+import implementations.util.KafkaConfigProperties;
 import javassist.ClassClassPath;
 import javassist.ClassPool;
 import javassist.CtClass;
@@ -85,10 +82,8 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	}
 
 	private void initKafka() {
-		Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-		
 		this.kafkaProducer = new KafkaProducer<>(
-			properties, 
+			KafkaConfigProperties.getInstance().get(), 
 			new StringSerializer(), 
 			new JCLResultSerializer()
 		);
@@ -127,12 +122,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				}
 
 				if(isPacu) {
-//					JCLTopic jclTopic = JCLTopic.getInstance();
 					String topicName = task.getTaskID() + hostAddress.replace(".", "");
-					Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-					topicProperties.put("topic.name", topicName);					
-					
-//					jclTopic.create(topicProperties);
 					
 					producedRecord = new ProducerRecord<>(
 						topicName,
@@ -182,12 +172,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						}
 						
 						if(isPacu) {
-//							JCLTopic jclTopic = JCLTopic.getInstance();
 							String topicName = task.getTaskID() + hostAddress.replace(".", "");
-							Properties topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-							topicProperties.put("topic.name", topicName);
-							
-//							jclTopic.create(topicProperties);
 							
 							producedRecord = new ProducerRecord<>(
 								topicName,

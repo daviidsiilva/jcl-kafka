@@ -1,6 +1,6 @@
 package implementations.collections;
 
-import implementations.dm_kernel.JCLTopic;
+import implementations.dm_kernel.JCLTopicAdmin;
 import implementations.dm_kernel.user.JCL_FacadeImpl.Holder;
 import implementations.util.ObjectWrap;
 import interfaces.kernel.JCL_facade;
@@ -13,13 +13,12 @@ import io.protostuff.Schema;
 import io.protostuff.runtime.RuntimeSchema;
 import java.io.*;
 import implementations.util.ByteBuffer;
-import implementations.util.JCLConfigProperties;
+import implementations.util.KafkaConfigProperties;
 
 import java.util.AbstractCollection;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -29,7 +28,6 @@ import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
-import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -93,6 +91,7 @@ public class JCLHashMapPacu<K,V>
     private static JCLResultResourceContainer localResourceMapContainer;
     private String gvNameKafka;
     private static JCLKafkaMapConsumerThread mapConsumer;
+    private static JCLTopicAdmin jclTopic;
     /** end 3.0 **/
     
     /**
@@ -133,8 +132,8 @@ public class JCLHashMapPacu<K,V>
 		
     	this.gvNameKafka = getKeyNameMapped(gvName);
     	
-    	Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-    	JCLTopic jclTopic = JCLTopic.getInstance();
+    	Properties properties = KafkaConfigProperties.getInstance().get();
+    	jclTopic = JCLTopicAdmin.getInstance();
     	
     	properties.put("topic.name", gvNameKafka);
 		
@@ -321,7 +320,7 @@ public class JCLHashMapPacu<K,V>
 			
 //			System.out.println("2 " + Thread.currentThread().getId() + " -> " + key + " : " + lockToken + " : " + minEntry.getValue().getCorrectResult());
 			if(minEntry != null && minEntry.getKey().toString().contains(lockToken)) {
-//				System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|IF minEntry{key:" + minEntry.getKey() + ",value:" + minEntry.getValue().getCorrectResult());
+//				System.out.println(KafkaConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|IF minEntry{key:" + minEntry.getKey() + ",value:" + minEntry.getValue().getCorrectResult());
 				return true;
 			}
 		} catch (Exception e) {

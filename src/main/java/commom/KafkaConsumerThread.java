@@ -1,34 +1,36 @@
 package commom;
 
 import java.time.Duration;
-import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
-import implementations.util.JCLConfigProperties;
+import implementations.util.KafkaConfigProperties;
 import interfaces.kernel.JCL_result;
 
-public class JCLKafkaConsumerThread extends Thread {
+public class KafkaConsumerThread extends Thread {
 	
 	AtomicBoolean stop = new AtomicBoolean(false);
 	KafkaConsumer<String, JCL_result> consumer;
 	
 	private static JCLResultResource localResourceGlobalVar;
 	private static JCLResultResource localResourceExecute;
+	private static List<String> subscribedTopics;
 	
-	public JCLKafkaConsumerThread(JCLResultResource localResourceGlobalVarParam, JCLResultResource localResourceExecuteParam) {
+	public KafkaConsumerThread(List<String> subscribedTopicsParam, JCLResultResource localResourceGlobalVarParam, JCLResultResource localResourceExecuteParam) {
+		subscribedTopics = subscribedTopicsParam;
 		localResourceGlobalVar = localResourceGlobalVarParam;
 		localResourceExecute = localResourceExecuteParam;
 	}
 
 	@Override
 	public void run() {
-		Properties consumerProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
+		Properties consumerProperties = KafkaConfigProperties.getInstance().get();
 		
 		consumer =  new KafkaConsumer<>(
 			consumerProperties,
@@ -36,25 +38,20 @@ public class JCLKafkaConsumerThread extends Thread {
 			new JCLResultDeserializer()
 		);
 		
-		try {
-			consumer.subscribe(
-				Pattern.compile(
-					"^(?!MAP).*$"
-				)
-			);
-			consumer.seekToBeginning(consumer.assignment());
-			
-			synchronized (this) {
-				this.notify();
-			}
-					
-			while(!stop.get()) {
+		consumer.subscribe(
+			subscribedTopics
+		);
+		
+		synchronized (this) {
+			this.notify();
+		}
+		
+		while(!stop.get()) {
+			try {
 				ConsumerRecords<String, JCL_result> records = consumer.poll(Duration.ofNanos(Long.MAX_VALUE));
 				
 				records.forEach(record -> {
-//					System.out.print("");
 //					System.out.println(record.key() + ":" + record);
-//					System.out.println("record t:" + record.topic() + ", k:" + record.key() + ", v:" + record.value().getCorrectResult() + ", o:" + record.offset());
 					
 					switch(record.key()) {
 					case Constants.Environment.EXECUTE_KEY:
@@ -119,18 +116,28 @@ public class JCLKafkaConsumerThread extends Thread {
 				});
 				
 				consumer.commitAsync();
+				
+			} catch (WakeupException wue) {
+				consumer.subscribe(
+					subscribedTopics
+				);
+			} catch (Exception e) {
+				System.err
+					.println("problem in KafkaConsumerRunner run()");
+				e.printStackTrace();
 			}
-		}catch (Exception e) {
-			System.err.println("problem in KafkaConsumerRunner run()");
-			
-			e.printStackTrace();
-		} 
-		finally {
-			consumer.close();
 		}
+		
+		consumer.close();
 	}
 	
 	public void shutdown() {
+//		System.out.println(Thread.currentThread().getId() + ":shutdown()");
 		stop.set(true);
+	}
+	
+	public void wakeup() {
+//		System.out.println(Thread.currentThread().getId() + ":wakeup()");
+		consumer.wakeup();
 	}
 }

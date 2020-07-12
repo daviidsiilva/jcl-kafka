@@ -10,7 +10,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
-import implementations.util.JCLConfigProperties;
+import implementations.util.KafkaConfigProperties;
 import interfaces.kernel.JCL_result;
 
 public class JCLKafkaMapConsumerThread extends Thread {
@@ -25,7 +25,7 @@ public class JCLKafkaMapConsumerThread extends Thread {
 
 	@Override
 	public void run() {
-		Properties consumerProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
+		Properties consumerProperties = KafkaConfigProperties.getInstance().get();
 		consumerProperties.put("group.id", consumerProperties.get("group.id") + "-" + Constants.Environment.MAP_PREFIX);
 		
 		consumer =  new KafkaConsumer<>(

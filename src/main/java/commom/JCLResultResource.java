@@ -25,7 +25,7 @@ public class JCLResultResource {
 	protected synchronized void wakeup(){
 		this.notify();
 	}
-							
+	
 	public synchronized JCL_result read(String key) throws Exception{
 //		System.out.println("A " + Thread.currentThread().getId() + " @ " + key);
 		if(!this.registers.isEmpty() && registers.containsKey(key)) {
@@ -36,6 +36,9 @@ public class JCLResultResource {
 		}
 		else {
 //			System.out.println("C " + Thread.currentThread().getId() + " @ " + key);
+//			if(!isFinished()) {
+//				suspend();
+//			}
 			return null;	
 		}
 	}

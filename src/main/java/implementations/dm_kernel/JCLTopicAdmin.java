@@ -3,6 +3,8 @@ package implementations.dm_kernel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 
 import org.apache.kafka.clients.admin.AdminClient;
@@ -11,24 +13,26 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.errors.TopicExistsException;
 
 import commom.Constants;
-import implementations.util.JCLConfigProperties;
+import implementations.util.KafkaConfigProperties;
 
-public class JCLTopic {
-	private static JCLTopic instance;
+public class JCLTopicAdmin {
+	private static JCLTopicAdmin instance;
 	private static Properties topicProperties;
 	private static AdminClient adminClient;
+	private static Set<String> serverTopicsSet;
 			
-	private JCLTopic() {
-		topicProperties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
+	private JCLTopicAdmin() {
+		serverTopicsSet = ConcurrentHashMap.newKeySet();
+		topicProperties = KafkaConfigProperties.getInstance().get();
 		adminClient = AdminClient.create(topicProperties);
 	}
 	
-	public static JCLTopic getInstance() {
+	public static JCLTopicAdmin getInstance() {
 		if(instance != null) {
 			return instance;
 		}
 		
-		return new JCLTopic();
+		return new JCLTopicAdmin();
 	}
 	
 	public void create(final Properties properties) {
@@ -61,28 +65,18 @@ public class JCLTopic {
 	}
 	
 	public boolean exists(final Properties properties) {
-		boolean topicExists = false;
+		boolean topicExists = true;
+		String topicName = properties.getProperty("topic.name");
 		
-		try {
-			topicExists = adminClient.listTopics()
-				.names()
-				.get()
-				.stream()
-				.anyMatch(
-					topicName -> topicName.equalsIgnoreCase(
-						properties.getProperty("topic.name")
-					)
-				);
-			
-			return topicExists;
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-
-			return topicExists;
-		} catch (ExecutionException e) {
-			e.printStackTrace();
-
-			return topicExists;
+		if(!serverTopicsSet.contains(topicName)) {
+			try {
+				serverTopicsSet = adminClient.listTopics().names().get();
+				topicExists = serverTopicsSet.contains(topicName);
+			} catch (InterruptedException | ExecutionException e) {
+				e.printStackTrace();
+			}
 		}
+		
+		return topicExists;
 	}
 }

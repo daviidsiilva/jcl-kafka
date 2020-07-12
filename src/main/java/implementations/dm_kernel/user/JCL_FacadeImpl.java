@@ -5,7 +5,7 @@ import implementations.collections.JCLPFuture;
 import implementations.collections.JCLSFuture;
 import implementations.collections.JCLVFuture;
 import implementations.dm_kernel.ConnectorImpl;
-import implementations.dm_kernel.JCLTopic;
+import implementations.dm_kernel.JCLTopicAdmin;
 import implementations.dm_kernel.MessageGenericImpl;
 import implementations.dm_kernel.MessageListGlobalVarImpl;
 import implementations.dm_kernel.MessageListTaskImpl;
@@ -40,9 +40,10 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
 
 import implementations.util.ByteBuffer;
-import implementations.util.JCLConfigProperties;
+import implementations.util.KafkaConfigProperties;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -58,32 +59,32 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.apache.kafka.clients.admin.RecordsToDelete;
-import org.apache.kafka.clients.producer.Callback;
+
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import javassist.ClassPool;
 import javassist.CtClass;
 import commom.JCLResultResource;
-import commom.JCLResultResourceContainer;
 import commom.JCLResultSerializer;
 import commom.JCL_resultImpl;
 import commom.JCL_taskImpl;
 import commom.Constants;
-import commom.JCLKafkaConsumerThread;
+import commom.KafkaConsumerThread;
 
 public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Holder implements JCL_facade{
 
@@ -116,14 +117,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	private static JCLResultResource localResourceGlobalVar;
 	private static JCLResultResource localResourceExecute;
-	
-	private JCLKafkaConsumerThread jclKafkaConsumer;
+	private static List<String> subscribedTopics;
+	private KafkaConsumerThread kct;
+	private static JCLTopicAdmin jclTopicAdmin;
 	/** 3.0 end **/
 	
 	protected JCL_FacadeImpl(Properties properties){
 		//Start seed rand GV
 		rand = new XORShiftRandom();
-		
 		
 		initKafka();
 		
@@ -234,26 +235,32 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	private void initKafka() {
-		Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-
 		kafkaProducer = new KafkaProducer<>(
-			properties,
+			KafkaConfigProperties.getInstance().get(),
 			new StringSerializer(),
 			new JCLResultSerializer()
 		);
 		
+		jclTopicAdmin = JCLTopicAdmin.getInstance();
+		
+		String defaultTopic = "jclDefault";
+		subscribedTopics = new CopyOnWriteArrayList<String>();
+		subscribedTopics.add(defaultTopic);
+		
 		localResourceGlobalVar = new JCLResultResource();
 		localResourceExecute = new JCLResultResource();
 		
-		jclKafkaConsumer = new JCLKafkaConsumerThread(
+		kct = new KafkaConsumerThread(
+			subscribedTopics,
 			localResourceGlobalVar, 
 			localResourceExecute
 		);
 		
 		try {
-			jclKafkaConsumer.start();
-			synchronized (jclKafkaConsumer) {
-				jclKafkaConsumer.wait();
+			kct.start();
+			
+			synchronized (kct) {
+				kct.wait();
 			}
 		} catch (InterruptedException e) {
 			System.err
@@ -1222,6 +1229,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			)
 		);
 		
+		subscribedTopics.add(key.toString());
+		kct.wakeup();
+		
 		return true;
 	}
 
@@ -1625,12 +1635,21 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	@Override
 	public JCL_result getValue(Object key) {
 		JCL_result kafkaReturn = new JCL_resultImpl();
+		AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
+		checkedIfExistsOnServer.set(false);
 		
 		try {
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
 				while ((kafkaReturn = localResourceGlobalVar.read(key.toString())) == null) {
-					if(!containsGlobalVar(key)) {
-						return kafkaReturn;
+					if(!subscribedTopics.contains(key.toString())) {
+						subscribedTopics.add(key.toString());
+						kct.wakeup();
+					} else if(!checkedIfExistsOnServer.get()) { 
+						checkedIfExistsOnServer.set(true);
+						
+						if(!containsGlobalVar(key)) {
+							return kafkaReturn;
+						}
 					}
 				}
 			}
@@ -1640,11 +1659,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			e.printStackTrace();
 			kafkaReturn.setErrorResult(e);
 		}
-		
 		return kafkaReturn;
 	}
 
-	// TODO
 	private boolean canAcquireGlobalVar (Object key, String lockToken) {
 		Entry<String, JCL_result> minEntry = null;
 		String prefix = key + ":" + Constants.Environment.LOCK_PREFIX + ":";
@@ -1657,9 +1674,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			}
 		}
 		
-//		System.out.println("2 " + Thread.currentThread().getId() + " -> " + key + " : " + lockToken + " : " + minEntry.getValue().getCorrectResult());
 		if(minEntry != null && minEntry.getKey().toString().contains(lockToken)) {
-//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|IF minEntry{key:" + minEntry.getKey() + ",value:" + minEntry.getValue().getCorrectResult());
 			return true;
 		}
 		
@@ -1669,13 +1684,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	// TODO
 	@Override
 	public JCL_result getValueLocking(Object key) {
-//		System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|getValueLocking:" + key);
-		JCL_result jclResult = null;
+		JCL_result jclResult = new JCL_resultImpl();
 		JCL_result jclResultLockToken = new JCL_resultImpl();
 		String lockToken = UUID.randomUUID().toString();
-//		System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|token:" + lockToken);
+		AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
+		checkedIfExistsOnServer.set(false);
+		
 		jclResultLockToken.setCorrectResult(lockToken);
-//		System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|send{key:" + Constants.Environment.GLOBAL_VAR_LOCK_KEY + ",value:" + lockToken + "}");
+
 		kafkaProducer.send(
 			new ProducerRecord<>(
 				key.toString(),
@@ -1685,24 +1701,31 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		);
 		
 		try {
-//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|A:" + (jclResult = localResourceGlobalVar.read(key + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null);
+
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while ((jclResult = localResourceGlobalVar.read(key + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null);
+				while ((jclResult = localResourceGlobalVar.read(key + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null) {
+					if(!subscribedTopics.contains(key.toString())) {
+						subscribedTopics.add(key.toString());
+						kct.wakeup();
+					} else if(!checkedIfExistsOnServer.get()) {
+						checkedIfExistsOnServer.set(true);
+						
+						if(!containsGlobalVar(key)) {
+							return jclResult;
+						}
+					}
+				};
 			}
-//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|!canAcquireGlobalVar(" + lockToken + "):" + !canAcquireGlobalVar(key, lockToken));	
-//			System.out.println(Thread.currentThread().getId() + " -> " + key + "," + lockToken + " -> " + !canAcquireGlobalVar(key, lockToken));
-			while(!canAcquireGlobalVar(key, lockToken));
-			
-//			System.out.println("lockToken a -> " + lockToken);
-//			System.out.println("3 " + Thread.currentThread().getId() + " ---- "+ jclResult.getCorrectResult());
-//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|send{key:" + Constants.Environment.GLOBAL_VAR_ACQUIRE + ",value:" + lockToken + "}");
+
+			while(!canAcquireGlobalVar(key, lockToken));			
+
 			kafkaProducer
 				.send(new ProducerRecord<>(
 					key.toString(),
 					Constants.Environment.GLOBAL_VAR_ACQUIRE,
 					jclResultLockToken
 				));
-//			System.out.println(JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig()).get("group.id") + "|A:" + (jclResult = localResourceGlobalVar.read(key.toString())) == null);
+
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
 				while ((jclResult = localResourceGlobalVar.read(key.toString())) == null);
 			}
@@ -1766,13 +1789,10 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean containsGlobalVar(Object key) {
-		Properties properties = JCLConfigProperties.get(Constants.Environment.JCLKafkaConfig());
-		
+		Properties properties = KafkaConfigProperties.getInstance().get();
 		properties.put("topic.name", key);
 		
-		JCLTopic jclTopic = JCLTopic.getInstance();
-		
-		boolean exists = jclTopic.exists(properties);
+		boolean exists = jclTopicAdmin.exists(properties);
 		
 		return exists;
 	}
@@ -2112,6 +2132,12 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			
 			try {
 				kafkaProperties.load(new FileInputStream(Constants.Environment.JCLKafkaConfig()));
+				
+				String groupId = "jcl-" + InetAddress.getLocalHost().getHostAddress() + "-" + UUID.randomUUID().toString();
+				System.out.println("groupId -> " + groupId);
+				kafkaProperties.put("group.id", groupId);
+				
+				kafkaProperties.store(new FileOutputStream(Constants.Environment.JCLKafkaConfig()), null);
 			}catch (FileNotFoundException e){					
 				System.err.println("File not found (" + Constants.Environment.JCLKafkaConfig() + ") !!!!!");
 				System.out.println("Create properties file " + Constants.Environment.JCLKafkaConfig());
