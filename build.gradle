@@ -101,7 +101,7 @@ project(':JCL_Host') {
 		    	 
 		    manifest {
 		        attributes(
-		        "Main-Class": "implementations.dm_kernel.host.KafkaHost")
+		        "Main-Class": "implementations.dm_kernel.host.MainHost")
 		        from '../manifest.txt'
 		    }
 	    }

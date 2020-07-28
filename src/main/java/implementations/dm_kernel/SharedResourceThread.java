@@ -12,6 +12,7 @@ import java.util.Properties;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -82,8 +83,7 @@ public class SharedResourceThread<T1, T2> extends Thread{
 		
 		try {
         	synchronized(this.localMemory) {
-        		consumedRecords.forEach(
-    				(record) -> {
+        		for(ConsumerRecord<String, byte[]> record : consumedRecords) {
     					if(record.value() != null) {
     						this.localMemory.put(record.key(), record.value());
     						
@@ -95,7 +95,6 @@ public class SharedResourceThread<T1, T2> extends Thread{
     					}
     					
     				}
-				);
         	}
         	/** 3.0 end **/       	        
 		} catch (Exception e) {

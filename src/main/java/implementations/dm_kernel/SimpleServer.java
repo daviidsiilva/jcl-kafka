@@ -113,14 +113,12 @@ public class SimpleServer extends Thread{
 	        while(true){
 	        	/** 3.0 begin **/
 	        	synchronized(this.localMemory) {	
-	        		consumedRecords.forEach(
-        				(record) -> {
+	        		for(ConsumerRecord<String, String> record : consumedRecords) {
         					this.localMemory.put(record.key(), record.value());
         					this.facade.notify();
         					System.out.println("notify()");
         					
         				}
-    				);
 	        		
 	        		consumedRecords = kafkaConsumer.poll(Duration.ofSeconds(5));	        		
 	        	}

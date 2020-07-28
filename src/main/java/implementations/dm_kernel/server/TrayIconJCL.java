@@ -100,7 +100,7 @@ public class TrayIconJCL{
 
         JMenu submenu = new JMenu("Host(s)");
         for (Map.Entry<Integer,ConcurrentMap<String,Map<String,String>>> MapH:metadata.entrySet()){
-        	for(Map<String, String> Hdata:MapH.getValue().values()){
+        	for(final Map<String, String> Hdata:MapH.getValue().values()){
         		JMenuItem menuHost = new JMenuItem(Hdata.get("DEVICE_ID"));
                 submenu.add(menuHost);
         		menuHost.addActionListener(new ActionListener() {

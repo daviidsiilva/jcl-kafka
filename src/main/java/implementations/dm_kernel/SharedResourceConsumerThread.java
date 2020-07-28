@@ -13,6 +13,7 @@ import java.util.Properties;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
@@ -139,8 +140,8 @@ public class SharedResourceConsumerThread extends Thread{
 			}
 		
         	synchronized(this.localMemory) {
-        		consumedRecords.forEach(
-    				(record) -> {
+        		for(ConsumerRecord<String, String> record : consumedRecords) {
+        		
     					this.offset = record.offset();
     					
     					if(record.topic().charAt(0) == '$') {
@@ -177,7 +178,6 @@ public class SharedResourceConsumerThread extends Thread{
 						
 //						System.out.println(recordOutput.toString());
     				}
-				);
         	}      	        
 		} catch (Exception e) {
 			

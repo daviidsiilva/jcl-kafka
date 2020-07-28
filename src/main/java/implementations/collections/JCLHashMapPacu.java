@@ -35,6 +35,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -287,84 +290,84 @@ public class JCLHashMapPacu<K,V>
     /**
      * Returns and lock the value to which the specified key is mapped.
      */
-    public V getLock(Object key){
-    	V oldValue = null;
-    	
-    	if(true) {
-    		JCL_result jclResult = new JCL_resultImpl();
-    		JCL_result jclResultLockToken = new JCL_resultImpl();
-    		String lockToken = UUID.randomUUID().toString();
-    		String topicName = getMapKeyMappedToKafka(key);
-    		AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
-    		
-    		checkedIfExistsOnServer.set(false);
-    		jclResultLockToken.setCorrectResult(lockToken);
-
-    		kafkaProducer.send(
-    			new ProducerRecord<>(
-    				topicName,
-    				Constants.Environment.MAP_LOCK,
-    				jclResultLockToken
-    			)
-    		);
-    		
-    		try {
-    			if((localResourceMap.isFinished()==false) || (localResourceMap.getNumOfRegisters()!=0)){
-    				while ((jclResult = localResourceMap.read(topicName + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null) {
-    					if(!subscribedTopics.contains(topicName)) {
-    						subscribedTopics.add(topicName);
-    						kafkaMapConsumerThread.wakeup();
-    						
-    					} else if(!checkedIfExistsOnServer.get()) {
-    						checkedIfExistsOnServer.set(true);
-    						
-    						if(!containsKey(key)) {
-    							return null;
-    						}
-    					}
-    				};
-    			}
-
-    			while(!canAcquireMapKey(topicName, lockToken));			
-
-    			kafkaProducer.send(
-    				new ProducerRecord<>(
-						topicName,
-    					Constants.Environment.MAP_ACQUIRE,
-    					jclResultLockToken
-    				)
-    			);
-
-    			if((localResourceMap.isFinished()==false) || (localResourceMap.getNumOfRegisters()!=0)){
-    				while ((jclResult = localResourceMap.read(topicName)) == null) {
-    					if(!subscribedTopics.contains(topicName)) {
-    						subscribedTopics.add(topicName);
-    						kafkaMapConsumerThread.wakeup();
-    						
-    					} else if(!checkedIfExistsOnServer.get()) {
-    						checkedIfExistsOnServer.set(true);
-    						
-    						if(!containsKey(key)) {
-    							return null;
-    						}
-    					}
-    				}
-    			}
-    			
-    			return (V) jclResult.getCorrectResult();
-    		} catch (Exception e){
-    			System.err
-    				.println("problem in JCL facade getValueLocking(Object " + key + ")");
-    			e.printStackTrace();
-    			
-    			jclResult.setErrorResult(e);
-    			
-    			return null;
-    		}
-    	}
-        
-        return (oldValue == null ? null : oldValue);
-    }
+//    public V getLock(Object key){
+//    	V oldValue = null;
+//    	
+//    	if(true) {
+//    		JCL_result jclResult = new JCL_resultImpl();
+//    		JCL_result jclResultLockToken = new JCL_resultImpl();
+//    		String lockToken = UUID.randomUUID().toString();
+//    		String topicName = getMapKeyMappedToKafka(key);
+//    		AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
+//    		
+//    		checkedIfExistsOnServer.set(false);
+//    		jclResultLockToken.setCorrectResult(lockToken);
+//
+//    		kafkaProducer.send(
+//    			new ProducerRecord<>(
+//    				topicName,
+//    				Constants.Environment.MAP_LOCK,
+//    				jclResultLockToken
+//    			)
+//    		);
+//    		
+//    		try {
+//    			if((localResourceMap.isFinished()==false) || (localResourceMap.getNumOfRegisters()!=0)){
+//    				while ((jclResult = localResourceMap.read(topicName + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null) {
+//    					if(!subscribedTopics.contains(topicName)) {
+//    						subscribedTopics.add(topicName);
+//    						kafkaMapConsumerThread.wakeup();
+//    						
+//    					} else if(!checkedIfExistsOnServer.get()) {
+//    						checkedIfExistsOnServer.set(true);
+//    						
+//    						if(!containsKey(key)) {
+//    							return null;
+//    						}
+//    					}
+//    				};
+//    			}
+//
+//    			while(!canAcquireMapKey(topicName, lockToken));			
+//
+//    			kafkaProducer.send(
+//    				new ProducerRecord<>(
+//						topicName,
+//    					Constants.Environment.MAP_ACQUIRE,
+//    					jclResultLockToken
+//    				)
+//    			);
+//
+//    			if((localResourceMap.isFinished()==false) || (localResourceMap.getNumOfRegisters()!=0)){
+//    				while ((jclResult = localResourceMap.read(topicName)) == null) {
+//    					if(!subscribedTopics.contains(topicName)) {
+//    						subscribedTopics.add(topicName);
+//    						kafkaMapConsumerThread.wakeup();
+//    						
+//    					} else if(!checkedIfExistsOnServer.get()) {
+//    						checkedIfExistsOnServer.set(true);
+//    						
+//    						if(!containsKey(key)) {
+//    							return null;
+//    						}
+//    					}
+//    				}
+//    			}
+//    			
+//    			return (V) jclResult.getCorrectResult();
+//    		} catch (Exception e){
+//    			System.err
+//    				.println("problem in JCL facade getValueLocking(Object " + key + ")");
+//    			e.printStackTrace();
+//    			
+//    			jclResult.setErrorResult(e);
+//    			
+//    			return null;
+//    		}
+//    	}
+//        
+//        return (oldValue == null ? null : oldValue);
+//    }
     
     private boolean canAcquireMapKey (Object key, String lockToken) {
 		Entry<String, JCL_result> minEntry = null;
@@ -485,7 +488,7 @@ public class JCLHashMapPacu<K,V>
 			);
 			
 			kafkaProducer.send(
-				new ProducerRecord<>(
+				new ProducerRecord<String, JCL_result>(
 					topicName,
 					Constants.Environment.MAP_RELEASE,
 					new JCL_resultImpl()
@@ -782,25 +785,25 @@ public class JCLHashMapPacu<K,V>
      * <tt>retainAll</tt> and <tt>clear</tt> operations.  It does not
      * support the <tt>add</tt> or <tt>addAll</tt> operations.
      */
-    public Collection<V> values() {
-        Collection<V> vs = new Values();
-        return vs;
-    }
+//    public Collection<V> values() {
+//        Collection<V> vs = new Values();
+//        return vs;
+//    }
 
-    private final class Values extends AbstractCollection<V> {
-        public Iterator<V> iterator() {
-            return newValueIterator();
-        }
-        public int size(){       	
-            return JCLHashMapPacu.this.size();
-        }
-        public boolean contains(Object o) {
-            return containsValue(o);
-        }
-        public void clear() {
-        	JCLHashMapPacu.this.clear();
-        }
-    }
+//    private final class Values extends AbstractCollection<V> {
+//        public Iterator<V> iterator() {
+//            return newValueIterator();
+//        }
+//        public int size(){       	
+//            return JCLHashMapPacu.this.size();
+//        }
+//        public boolean contains(Object o) {
+//            return containsValue(o);
+//        }
+//        public void clear() {
+//        	JCLHashMapPacu.this.clear();
+//        }
+//    }
 
     /**
      * Returns a {@link Set} view of the mappings contained in this map.
@@ -818,38 +821,38 @@ public class JCLHashMapPacu<K,V>
      *
      * @return a set view of the mappings contained in this map
      */
-    public Set<Map.Entry<K,V>> entrySet() {
-        return entrySet0();
-    }
+//    public Set<Map.Entry<K,V>> entrySet() {
+//        return entrySet0();
+//    }
 
-    private Set<Map.Entry<K,V>> entrySet0() {
-        Set<Map.Entry<K,V>> es = entrySet;
-        return es != null ? es : (entrySet = new EntrySet());
-    }
+//    private Set<Map.Entry<K,V>> entrySet0() {
+//        Set<Map.Entry<K,V>> es = entrySet;
+//        return es != null ? es : (entrySet = new EntrySet());
+//    }
 
-    private final class EntrySet extends AbstractSet<Map.Entry<K,V>> {
-        public Iterator<Map.Entry<K,V>> iterator() {
-            return newEntryIterator();
-        }
-        public boolean contains(Object o) {
-            if (!(o instanceof Map.Entry))
-                return false;
-            Map.Entry<K,V> e = (Map.Entry<K,V>) o;
-            Entry<K,V> candidate = getEntry(e.getKey());
-            return candidate != null && candidate.equals(e);
-        }
-        public boolean remove(Object o) {
-            return (JCLHashMapPacu.this.remove(o)!=null);
-        }
-        
-        public int size() {
-            return JCLHashMapPacu.this.size();
-        }
-        
-        public void clear() {
-        	JCLHashMapPacu.this.clear();
-        }
-    }
+//    private final class EntrySet extends AbstractSet<Map.Entry<K,V>> {
+//        public Iterator<Map.Entry<K,V>> iterator() {
+//            return newEntryIterator();
+//        }
+//        public boolean contains(Object o) {
+//            if (!(o instanceof Map.Entry))
+//                return false;
+//            Map.Entry<K,V> e = (Map.Entry<K,V>) o;
+//            Entry<K,V> candidate = getEntry(e.getKey());
+//            return candidate != null && candidate.equals(e);
+//        }
+//        public boolean remove(Object o) {
+//            return (JCLHashMapPacu.this.remove(o)!=null);
+//        }
+//        
+//        public int size() {
+//            return JCLHashMapPacu.this.size();
+//        }
+//        
+//        public void clear() {
+//        	JCLHashMapPacu.this.clear();
+//        }
+//    }
     
     public static void destroy(){
     	if(DEFAULT_JCL!=null){
@@ -858,5 +861,94 @@ public class JCLHashMapPacu<K,V>
     		System.exit(0);
     	}
     }
+
+	@Override
+	public Collection<V> values() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public Set<java.util.Map.Entry<K, V>> entrySet() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public V getOrDefault(Object key, V defaultValue) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public void forEach(BiConsumer<? super K, ? super V> action) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void replaceAll(
+			BiFunction<? super K, ? super V, ? extends V> function) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public V putIfAbsent(K key, V value) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public boolean remove(Object key, Object value) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public boolean replace(K key, V oldValue, V newValue) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public V replace(K key, V value) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public V computeIfAbsent(K key,
+			Function<? super K, ? extends V> mappingFunction) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public V computeIfPresent(K key,
+			BiFunction<? super K, ? super V, ? extends V> remappingFunction) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public V compute(K key,
+			BiFunction<? super K, ? super V, ? extends V> remappingFunction) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public V merge(K key, V value,
+			BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public V getLock(K key) {
+		// TODO Auto-generated method stub
+		return null;
+	}
 }
 

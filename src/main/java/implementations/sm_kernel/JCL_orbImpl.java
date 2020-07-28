@@ -21,9 +21,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
+import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.google.common.primitives.Primitives;
@@ -82,7 +84,8 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	}
 
 	private void initKafka() {
-		this.kafkaProducer = new KafkaProducer<>(
+		System.out.println(KafkaConfigProperties.getInstance().get());
+		this.kafkaProducer = new KafkaProducer<String, JCL_result>(
 			KafkaConfigProperties.getInstance().get(), 
 			new StringSerializer(), 
 			new JCLResultSerializer()
@@ -91,8 +94,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	
 	@Override
 	public void execute(JCL_task task) {
-		ProducerRecord<String, JCL_result> producedRecord;
-		
 		try {
 			int para;
 			
@@ -123,15 +124,15 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 
 				if(isPacu) {
 					String topicName = task.getTaskID() + hostAddress.replace(".", "");
-					
-					producedRecord = new ProducerRecord<>(
-						topicName,
-						Constants.Environment.EXECUTE_KEY,
-						jResult
-					);
-					
-					kafkaProducer
-						.send(producedRecord);				
+					ProducerRecord<String, JCL_result> p = new ProducerRecord<String, JCL_result>(
+							topicName,
+							Constants.Environment.EXECUTE_KEY,
+							jResult
+						);
+//					System.out.println(p);
+					kafkaProducer.send(
+						p
+					);				
 				}
 				
 				synchronized (jResult) {
@@ -173,15 +174,15 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						
 						if(isPacu) {
 							String topicName = task.getTaskID() + hostAddress.replace(".", "");
-							
-							producedRecord = new ProducerRecord<>(
-								topicName,
-								Constants.Environment.EXECUTE_KEY,
-								jResult
+							ProducerRecord<String, JCL_result> p = new ProducerRecord<String, JCL_result>(
+									topicName,
+									Constants.Environment.EXECUTE_KEY,
+									jResult
+								);
+//							System.out.println(p);
+							kafkaProducer.send(
+								p
 							);
-							
-							kafkaProducer
-								.send(producedRecord);
 						}
 						
 						synchronized (jResult) {

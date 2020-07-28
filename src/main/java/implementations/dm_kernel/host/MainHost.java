@@ -221,7 +221,7 @@ public class MainHost extends Server{
 	@Override
 	protected void beforeListening() {
 		// Read properties file.
-		Properties properties = new Properties();
+		final Properties properties = new Properties();
 		try {
 			properties.load(new FileInputStream("../jcl_conf/config.properties"));
 		} catch (IOException e) {

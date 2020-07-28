@@ -497,7 +497,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					js.add(host+port+mac+portS);
 					jarsSlaves.put(objectNickname,js);
 				}	    		  	    			    		  
-
+				
 				//Test if host contain jar
 				if(jarsSlaves.get(objectNickname).contains(host+port+mac+portS)){
 					//Just exec					
@@ -1219,8 +1219,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		jclResultInstance.setCorrectResult(instance);
 		
-		kafkaProducer
-			.send(new ProducerRecord<>(
+		kafkaProducer.send(new ProducerRecord<>(
 				key.toString(),
 				Constants.Environment.GLOBAL_VAR_KEY,
 			    jclResultInstance
@@ -1573,7 +1572,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	public boolean deleteGlobalVar(Object key) {
 		try {
 			kafkaProducer
-				.send(new ProducerRecord<>(
+				.send(new ProducerRecord<String, JCL_result>(
 					key.toString(),
 					Constants.Environment.GLOBAL_VAR_DEL,
 				    null
@@ -1597,20 +1596,22 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		try {
 			jclResult.setCorrectResult(value);
 			
-			kafkaProducer.send(
-				new ProducerRecord<>(
+			ProducerRecord <String, JCL_result> pr = new ProducerRecord<String, JCL_result>(
 					key.toString(),
 					Constants.Environment.GLOBAL_VAR_KEY,
 					jclResult
-				)
+				); 
+			kafkaProducer.send(
+				pr
 			);
 			
-			kafkaProducer.send(
-				new ProducerRecord<>(
+			pr = new ProducerRecord<String, JCL_result>(
 					key.toString(),
 					Constants.Environment.GLOBAL_VAR_RELEASE,
 					new JCL_resultImpl()
-				)
+				);
+			kafkaProducer.send(
+				pr
 			);
 			
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
@@ -1690,14 +1691,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		jclResultLockToken.setCorrectResult(lockToken);
 
-		kafkaProducer.send(
-			new ProducerRecord<>(
+		ProducerRecord <String, JCL_result> pr = new ProducerRecord<String, JCL_result>(
 				key.toString(),
 				Constants.Environment.GLOBAL_VAR_LOCK_KEY,
 				jclResultLockToken
-			)
+			); 
+		kafkaProducer.send(
+			pr
 		);
-		
+		System.out.println("pr: " + pr);
 		try {
 
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
@@ -1714,15 +1716,19 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					}
 				};
 			}
+			System.out.println(Thread.currentThread().getId() + " jclResult: " + jclResult.getCorrectResult());
+			System.out.println(Thread.currentThread().getId() + " canAcquire: " + canAcquireGlobalVar(key, lockToken));
+			while(!canAcquireGlobalVar(key, lockToken));
 
-			while(!canAcquireGlobalVar(key, lockToken));			
-
-			kafkaProducer
-				.send(new ProducerRecord<>(
+			pr = new ProducerRecord<String, JCL_result>(
 					key.toString(),
 					Constants.Environment.GLOBAL_VAR_ACQUIRE,
 					jclResultLockToken
-				));
+				);
+			System.out.println("pr: " + pr);
+			kafkaProducer.send(
+				pr
+			);
 
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
 				while ((jclResult = localResourceGlobalVar.read(key.toString())) == null);
@@ -2471,7 +2477,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				hostTaskId = resultConfig[0];
 				hostAddress = resultConfig[1].toString().replace(".", "");
 				String topicName = hostTaskId.toString() + hostAddress;
-
+//				System.out.println(Thread.currentThread().getId() + " | " + topicName);
 				try {
 					if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
 						while ((resultF = localResourceExecute.read(topicName)) == null) {
@@ -2488,7 +2494,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 					resultF.setErrorResult(e);
 				}
-
+//				System.out.println(Thread.currentThread().getId() + " | " + topicName + " | "  + resultF.getCorrectResult());
 				return resultF;
 			} catch (Exception e) {
 				System.err

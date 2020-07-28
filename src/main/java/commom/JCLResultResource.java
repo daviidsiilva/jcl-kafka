@@ -69,10 +69,4 @@ public class JCLResultResource {
 	public Set<Entry<String, JCL_result>> entrySet(){
 		return registers.entrySet();
 	}
-	
-	public void print() {
-		registers.forEach((k, v) -> {
-			System.out.println("k: " + k + ", v: " + v.getCorrectResult());
-		});
-	}
 }

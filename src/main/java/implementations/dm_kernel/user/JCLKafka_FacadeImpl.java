@@ -56,7 +56,7 @@ public class JCLKafka_FacadeImpl extends JCL_FacadeImplLamb {
 	}
 
 	public Object[] execute(
-		String objectNickname,
+		final String objectNickname,
 		String host,
 		String port, 
 		String mac, 
@@ -66,7 +66,7 @@ public class JCLKafka_FacadeImpl extends JCL_FacadeImplLamb {
 	) {
 		try {		
 			
-			Properties kafkaProperties = new KafkaProperties().get(host, port, objectNickname);
+			final Properties kafkaProperties = new KafkaProperties().get(host, port, objectNickname);
 			
 			Thread threadProducer = new Thread() {
 				public void run() {
