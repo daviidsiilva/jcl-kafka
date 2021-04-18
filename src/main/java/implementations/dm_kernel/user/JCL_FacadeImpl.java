@@ -41,6 +41,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 
 import implementations.util.ByteBuffer;
 import implementations.util.KafkaConfigProperties;
@@ -118,6 +119,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private static List<String> subscribedTopics;
 	private static KafkaConsumerThread kct;
 	private static JCLTopicAdmin jclTopicAdmin;
+	
+	private String userIPAddress;
 	/** 3.0 end **/
 	
 	protected JCL_FacadeImpl(Properties properties){
@@ -233,6 +236,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	private void initKafka() {
+		
+		try {
+			this.userIPAddress = InetAddress.getLocalHost().getHostAddress();
+		} catch (UnknownHostException e) {
+			System.err
+				.println("Problem in void initKafka() when getHostAddress");
+			e.printStackTrace();
+		}
+		
 		kafkaProducer = new KafkaProducer<>(
 			KafkaConfigProperties.getInstance().get(),
 			new StringSerializer(),
@@ -241,9 +253,8 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		jclTopicAdmin = JCLTopicAdmin.getInstance();
 		
-		String defaultTopic = "jclDefault";
 		subscribedTopics = new CopyOnWriteArrayList<String>();
-		subscribedTopics.add(defaultTopic);
+		subscribedTopics.add(this.userIPAddress.toString());
 		
 		localResourceGlobalVar = new JCLResultResource();
 		localResourceExecute = new JCLResultResource();
@@ -1215,19 +1226,18 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	synchronized public boolean instantiateGlobalVar(Object key, Object instance) {
-		JCL_result jclResultInstance = new JCL_resultImpl();
 		
+		JCL_result jclResultInstance = new JCL_resultImpl();
 		jclResultInstance.setCorrectResult(instance);
 		
-		kafkaProducer.send(new ProducerRecord<>(
+		ProducerRecord<String, JCL_result> record = new ProducerRecord<>(
+				userIPAddress.toString(),
 				key.toString(),
-				Constants.Environment.GLOBAL_VAR_KEY,
 			    jclResultInstance
-			)
-		);
+			); 
+		record.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_KEY.getBytes());
 		
-		subscribedTopics.add(key.toString());
-		kct.wakeup();
+		kafkaProducer.send(record);
 		
 		return true;
 	}
@@ -1597,19 +1607,23 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			jclResult.setCorrectResult(value);
 			
 			ProducerRecord <String, JCL_result> pr = new ProducerRecord<String, JCL_result>(
+					this.userIPAddress,
 					key.toString(),
-					Constants.Environment.GLOBAL_VAR_KEY,
 					jclResult
-				); 
+				);
+			pr.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_KEY.getBytes());
+			
 			kafkaProducer.send(
 				pr
 			);
 			
 			pr = new ProducerRecord<String, JCL_result>(
+					this.userIPAddress,
 					key.toString(),
-					Constants.Environment.GLOBAL_VAR_RELEASE,
 					new JCL_resultImpl()
 				);
+			pr.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_RELEASE.getBytes());
+			
 			kafkaProducer.send(
 				pr
 			);
@@ -1633,24 +1647,12 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	
 	@Override
 	public JCL_result getValue(Object key) {
+
 		JCL_result kafkaReturn = new JCL_resultImpl();
-		AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
-		checkedIfExistsOnServer.set(false);
 		
 		try {
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while ((kafkaReturn = localResourceGlobalVar.read(key.toString())) == null) {
-					if(!subscribedTopics.contains(key.toString())) {
-						subscribedTopics.add(key.toString());
-						kct.wakeup();
-					} else if(!checkedIfExistsOnServer.get()) { 
-						checkedIfExistsOnServer.set(true);
-						
-						if(!containsGlobalVar(key)) {
-							return kafkaReturn;
-						}
-					}
-				}
+				while ((kafkaReturn = localResourceGlobalVar.read(key.toString())) == null);
 			}
 		} catch (Exception e) {
 			System.err
@@ -1658,6 +1660,7 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 			e.printStackTrace();
 			kafkaReturn.setErrorResult(e);
 		}
+		
 		return kafkaReturn;
 	}
 
@@ -1686,46 +1689,35 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		JCL_result jclResult = new JCL_resultImpl();
 		JCL_result jclResultLockToken = new JCL_resultImpl();
 		String lockToken = UUID.randomUUID().toString();
-		AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
-		checkedIfExistsOnServer.set(false);
 		
 		jclResultLockToken.setCorrectResult(lockToken);
 
 		ProducerRecord <String, JCL_result> pr = new ProducerRecord<String, JCL_result>(
+				this.userIPAddress,
 				key.toString(),
-				Constants.Environment.GLOBAL_VAR_LOCK_KEY,
 				jclResultLockToken
-			); 
+			);
+		pr.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_LOCK_KEY.getBytes());
+		
 		kafkaProducer.send(
 			pr
 		);
-		System.out.println("pr: " + pr);
+		
 		try {
 
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
-				while ((jclResult = localResourceGlobalVar.read(key + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null) {
-					if(!subscribedTopics.contains(key.toString())) {
-						subscribedTopics.add(key.toString());
-						kct.wakeup();
-					} else if(!checkedIfExistsOnServer.get()) {
-						checkedIfExistsOnServer.set(true);
-						
-						if(!containsGlobalVar(key)) {
-							return jclResult;
-						}
-					}
-				};
+				while ((jclResult = localResourceGlobalVar.read(key + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null);
 			}
-			System.out.println(Thread.currentThread().getId() + " jclResult: " + jclResult.getCorrectResult());
-			System.out.println(Thread.currentThread().getId() + " canAcquire: " + canAcquireGlobalVar(key, lockToken));
+			
 			while(!canAcquireGlobalVar(key, lockToken));
 
 			pr = new ProducerRecord<String, JCL_result>(
+					this.userIPAddress,
 					key.toString(),
-					Constants.Environment.GLOBAL_VAR_ACQUIRE,
 					jclResultLockToken
 				);
-			System.out.println("pr: " + pr);
+			pr.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_ACQUIRE.getBytes());
+			
 			kafkaProducer.send(
 				pr
 			);
@@ -2475,12 +2467,13 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 				result = super.getResultBlocking(ID);
 				resultConfig = (Object[])result.getCorrectResult();
 				hostTaskId = resultConfig[0];
-				hostAddress = resultConfig[1].toString().replace(".", "");
-				String topicName = hostTaskId.toString() + hostAddress;
+				hostAddress = resultConfig[1].toString();
+				String topicName = hostAddress.toString();
+				String executeKeyOnLocalResourceExecute = Constants.Environment.EXECUTE_KEY + hostTaskId;
 //				System.out.println(Thread.currentThread().getId() + " | " + topicName);
 				try {
 					if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
-						while ((resultF = localResourceExecute.read(topicName)) == null) {
+						while ((resultF = localResourceExecute.read(executeKeyOnLocalResourceExecute)) == null) {
 							if(!subscribedTopics.contains(topicName)) {
 								subscribedTopics.add(topicName);
 								kct.wakeup();

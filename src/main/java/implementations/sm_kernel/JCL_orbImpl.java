@@ -11,7 +11,6 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.Enumeration;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,11 +20,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.google.common.primitives.Primitives;
@@ -57,7 +54,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	private URLClassLoader classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
 	
 	private boolean isPacu = false;
-	private String hostAddress;
 	private Producer<String, JCL_result> kafkaProducer;
 	
 	private JCL_orbImpl() {
@@ -72,7 +68,6 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	
 	private JCL_orbImpl(String hostAddress) {
 		this.isPacu = true;
-		this.hostAddress = hostAddress;
 		
 		initKafka();
 		
@@ -84,7 +79,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	}
 
 	private void initKafka() {
-		System.out.println(KafkaConfigProperties.getInstance().get());
+		
 		this.kafkaProducer = new KafkaProducer<String, JCL_result>(
 			KafkaConfigProperties.getInstance().get(), 
 			new StringSerializer(), 
@@ -123,16 +118,14 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				}
 
 				if(isPacu) {
-					String topicName = task.getTaskID() + hostAddress.replace(".", "");
-					ProducerRecord<String, JCL_result> p = new ProducerRecord<String, JCL_result>(
-							topicName,
-							Constants.Environment.EXECUTE_KEY,
+					ProducerRecord<String, JCL_result> record = new ProducerRecord<String, JCL_result>(
+							task.getHost(),
+							Constants.Environment.EXECUTE_KEY + task.getTaskID(),
 							jResult
 						);
-//					System.out.println(p);
-					kafkaProducer.send(
-						p
-					);				
+					record.headers().add("jcl-action", Constants.Environment.EXECUTE_KEY.getBytes());
+					
+					kafkaProducer.send(record);
 				}
 				
 				synchronized (jResult) {
@@ -173,16 +166,14 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						}
 						
 						if(isPacu) {
-							String topicName = task.getTaskID() + hostAddress.replace(".", "");
-							ProducerRecord<String, JCL_result> p = new ProducerRecord<String, JCL_result>(
-									topicName,
-									Constants.Environment.EXECUTE_KEY,
+							ProducerRecord<String, JCL_result> record = new ProducerRecord<String, JCL_result>(
+									task.getHost(),
+									Constants.Environment.EXECUTE_KEY + task.getTaskID(),
 									jResult
 								);
+							record.headers().add("jcl-action", Constants.Environment.EXECUTE_KEY.getBytes());
 //							System.out.println(p);
-							kafkaProducer.send(
-								p
-							);
+							kafkaProducer.send(record);
 						}
 						
 						synchronized (jResult) {
