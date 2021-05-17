@@ -57,6 +57,7 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	private boolean isPacu = false;
 	private String hostAddress;
 	private Producer<String, JCL_result> kafkaProducer;
+	private String topicGranularity;
 	
 	private JCL_orbImpl() {
 		initKafka();
@@ -82,10 +83,17 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 	}
 
 	private void initKafka() {
+		Properties kafkaProperties = KafkaConfigProperties.getInstance().get();
+		
 		this.kafkaProducer = new KafkaProducer<>(
-			KafkaConfigProperties.getInstance().get(), 
+			kafkaProperties, 
 			new StringSerializer(), 
 			new JCLResultSerializer()
+		);
+		
+		this.topicGranularity = kafkaProperties.getProperty(
+			Constants.Environment.GRANULARITY_CONFIG_KEY, 
+			Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE
 		);
 	}
 	
@@ -122,16 +130,27 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 				}
 
 				if(isPacu) {
-					String topicName = task.getTaskID() + hostAddress.replace(".", "");
-					
-					producedRecord = new ProducerRecord<>(
-						topicName,
-						Constants.Environment.EXECUTE_KEY,
-						jResult
-					);
-					
-					kafkaProducer
-						.send(producedRecord);				
+					if(this.topicGranularity == Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE) {
+						String topicName = task.getTaskID() + hostAddress.replace(".", "");
+						
+						producedRecord = new ProducerRecord<>(
+							topicName,
+							Constants.Environment.EXECUTE_KEY,
+							jResult
+						);
+						
+						kafkaProducer
+							.send(producedRecord);
+					} else {
+						ProducerRecord<String, JCL_result> record = new ProducerRecord<String, JCL_result>(
+								task.getHost(),
+								Constants.Environment.EXECUTE_KEY + task.getTaskID(),
+								jResult
+							);
+						record.headers().add("jcl-action", Constants.Environment.EXECUTE_KEY.getBytes());
+						
+						kafkaProducer.send(record);
+					}
 				}
 				
 				synchronized (jResult) {
@@ -172,16 +191,27 @@ public class JCL_orbImpl<T extends JCL_result> implements JCL_orb<T> {
 						}
 						
 						if(isPacu) {
-							String topicName = task.getTaskID() + hostAddress.replace(".", "");
-							
-							producedRecord = new ProducerRecord<>(
-								topicName,
-								Constants.Environment.EXECUTE_KEY,
-								jResult
-							);
-							
-							kafkaProducer
-								.send(producedRecord);
+							if(this.topicGranularity == Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE) {
+								String topicName = task.getTaskID() + hostAddress.replace(".", "");
+								
+								producedRecord = new ProducerRecord<>(
+									topicName,
+									Constants.Environment.EXECUTE_KEY,
+									jResult
+								);
+								
+								kafkaProducer
+									.send(producedRecord);
+							} else {
+								ProducerRecord<String, JCL_result> record = new ProducerRecord<String, JCL_result>(
+									task.getHost(),
+									Constants.Environment.EXECUTE_KEY + task.getTaskID(),
+									jResult
+								);
+								record.headers().add("jcl-action", Constants.Environment.EXECUTE_KEY.getBytes());
+
+								kafkaProducer.send(record);
+							}
 						}
 						
 						synchronized (jResult) {

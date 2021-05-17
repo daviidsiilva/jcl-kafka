@@ -41,6 +41,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 
 import implementations.util.ByteBuffer;
 import implementations.util.KafkaConfigProperties;
@@ -84,6 +85,7 @@ import commom.JCL_taskImpl;
 import commom.Constants;
 import commom.KafkaConsumerThread;
 
+
 public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Holder implements JCL_facade{
 
 	private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -118,6 +120,9 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	private static List<String> subscribedTopics;
 	private static KafkaConsumerThread kct;
 	private static JCLTopicAdmin jclTopicAdmin;
+	
+	public static String topicGranularity;
+	private String userIPAddress;
 	/** 3.0 end **/
 	
 	protected JCL_FacadeImpl(Properties properties){
@@ -233,6 +238,18 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	}
 
 	private void initKafka() {
+		Properties kafkaProperties = KafkaConfigProperties.getInstance().get();
+		
+		topicGranularity = kafkaProperties.getProperty(Constants.Environment.GRANULARITY_CONFIG_KEY);
+		
+		if(topicGranularity == Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE) {
+			this.initKafkaHighGranularity();
+		} else {
+			this.initKafkaLowGranularity();
+		}
+	}
+	
+	private void initKafkaHighGranularity() {
 		kafkaProducer = new KafkaProducer<>(
 			KafkaConfigProperties.getInstance().get(),
 			new StringSerializer(),
@@ -244,6 +261,49 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		String defaultTopic = "jclDefault";
 		subscribedTopics = new CopyOnWriteArrayList<String>();
 		subscribedTopics.add(defaultTopic);
+		
+		localResourceGlobalVar = new JCLResultResource();
+		localResourceExecute = new JCLResultResource();
+		
+		kct = new KafkaConsumerThread(
+			subscribedTopics,
+			localResourceGlobalVar, 
+			localResourceExecute
+		);
+		
+		try {
+			kct.start();
+			
+			synchronized (kct) {
+				kct.wait();
+			}
+		} catch (InterruptedException e) {
+			System.err
+				.println("Problem in void initKafka()");
+			e.printStackTrace();
+		}
+	}
+	
+	private void initKafkaLowGranularity() {
+		
+		try {
+			this.userIPAddress = InetAddress.getLocalHost().getHostAddress();
+		} catch (UnknownHostException e) {
+			System.err
+				.println("Problem in void initKafka() when getHostAddress");
+			e.printStackTrace();
+		}
+		
+		kafkaProducer = new KafkaProducer<>(
+			KafkaConfigProperties.getInstance().get(),
+			new StringSerializer(),
+			new JCLResultSerializer()
+		);
+		
+		jclTopicAdmin = JCLTopicAdmin.getInstance();
+		
+		subscribedTopics = new CopyOnWriteArrayList<String>();
+		subscribedTopics.add(this.userIPAddress.toString());
 		
 		localResourceGlobalVar = new JCLResultResource();
 		localResourceExecute = new JCLResultResource();
@@ -1215,6 +1275,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	synchronized public boolean instantiateGlobalVar(Object key, Object instance) {
+		
+		if(topicGranularity == Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE) {
+			return this.instantiateGlobalVarHighGranularity(key, instance);
+		} else {
+			return this.instantiateGlobalVarLowGranularity(key, instance);
+		}	
+	}
+	
+	synchronized private boolean instantiateGlobalVarHighGranularity(Object key, Object instance) {
 		JCL_result jclResultInstance = new JCL_resultImpl();
 		
 		jclResultInstance.setCorrectResult(instance);
@@ -1229,6 +1298,22 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		
 		subscribedTopics.add(key.toString());
 		kct.wakeup();
+		
+		return true;
+	}
+	
+	synchronized private boolean instantiateGlobalVarLowGranularity(Object key, Object instance) {
+		JCL_result jclResultInstance = new JCL_resultImpl();
+		jclResultInstance.setCorrectResult(instance);
+		
+		ProducerRecord<String, JCL_result> record = new ProducerRecord<>(
+				userIPAddress.toString(),
+				key.toString(),
+			    jclResultInstance
+			); 
+		record.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_KEY.getBytes());
+		
+		kafkaProducer.send(record);
 		
 		return true;
 	}
@@ -1592,6 +1677,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 
 	@Override
 	public boolean setValueUnlocking(Object key, Object value) {
+		
+		if(topicGranularity == Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE) {
+			return this.setValueUnlockingHighGranularity(key, value);
+		} else {
+			return this.setValueUnlockingLowGranularity(key, value);
+		}
+	}
+	
+	private boolean setValueUnlockingHighGranularity(Object key, Object value) {
 		JCL_result jclResult = new JCL_resultImpl();
 
 		try {
@@ -1630,8 +1724,62 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 	}
 	
+	private boolean setValueUnlockingLowGranularity(Object key, Object value) {
+		JCL_result jclResult = new JCL_resultImpl();
+
+		try {
+			jclResult.setCorrectResult(value);
+			
+			ProducerRecord <String, JCL_result> pr = new ProducerRecord<String, JCL_result>(
+					this.userIPAddress,
+					key.toString(),
+					jclResult
+				);
+			pr.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_KEY.getBytes());
+			
+			kafkaProducer.send(
+				pr
+			);
+			
+			pr = new ProducerRecord<String, JCL_result>(
+					this.userIPAddress,
+					key.toString(),
+					new JCL_resultImpl()
+				);
+			pr.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_RELEASE.getBytes());
+			
+			kafkaProducer.send(
+				pr
+			);
+			
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while (localResourceGlobalVar.read(key + ":" + Constants.Environment.GLOBAL_VAR_ACQUIRE) != null);
+			}
+			
+			// TODO deletar mensagens ?
+			
+			return true;
+			
+		} catch (Exception e) {
+			System.err.println("problem in JCL facade setValueUnlocking(Object " + key + ", Object " + value + ")");
+			
+			e.printStackTrace();
+			
+			return false;
+		}
+	}
+	
 	@Override
 	public JCL_result getValue(Object key) {
+		
+		if(topicGranularity == Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE) {
+			return this.getValueHighGranularity(key);
+		} else {
+			return this.getValueLowGranularity(key);
+		}
+	}
+	
+	private JCL_result getValueHighGranularity(Object key) {
 		JCL_result kafkaReturn = new JCL_resultImpl();
 		AtomicBoolean checkedIfExistsOnServer = new AtomicBoolean();
 		checkedIfExistsOnServer.set(false);
@@ -1660,6 +1808,24 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		return kafkaReturn;
 	}
 
+	private JCL_result getValueLowGranularity(Object key) {
+
+		JCL_result kafkaReturn = new JCL_resultImpl();
+		
+		try {
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while ((kafkaReturn = localResourceGlobalVar.read(key.toString())) == null);
+			}
+		} catch (Exception e) {
+			System.err
+				.println("problem in JCL_result getValue(" + key + ")");
+			e.printStackTrace();
+			kafkaReturn.setErrorResult(e);
+		}
+		
+		return kafkaReturn;
+	}
+	
 	private boolean canAcquireGlobalVar (Object key, String lockToken) {
 		Entry<String, JCL_result> minEntry = null;
 		String prefix = key + ":" + Constants.Environment.LOCK_PREFIX + ":";
@@ -1682,6 +1848,15 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 	// TODO
 	@Override
 	public JCL_result getValueLocking(Object key) {
+		
+		if(topicGranularity == Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE) {
+			return this.getValueLockingHighGranularity(key);
+		} else {
+			return this.getValueLockingLowGranularity(key);
+		}
+	}
+	
+	private JCL_result getValueLockingHighGranularity(Object key) {
 		JCL_result jclResult = new JCL_resultImpl();
 		JCL_result jclResultLockToken = new JCL_resultImpl();
 		String lockToken = UUID.randomUUID().toString();
@@ -1723,6 +1898,59 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					Constants.Environment.GLOBAL_VAR_ACQUIRE,
 					jclResultLockToken
 				));
+
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while ((jclResult = localResourceGlobalVar.read(key.toString())) == null);
+			}
+			
+			return jclResult;
+		} catch (Exception e){
+			System.err
+				.println("problem in JCL facade getValueLocking(Object " + key + ")");
+			e.printStackTrace();
+			
+			jclResult.setErrorResult(e);
+			
+			return jclResult;
+		}
+	}
+	
+	private JCL_result getValueLockingLowGranularity(Object key) {
+		JCL_result jclResult = new JCL_resultImpl();
+		JCL_result jclResultLockToken = new JCL_resultImpl();
+		String lockToken = UUID.randomUUID().toString();
+		
+		jclResultLockToken.setCorrectResult(lockToken);
+
+		ProducerRecord <String, JCL_result> pr = new ProducerRecord<String, JCL_result>(
+				this.userIPAddress,
+				key.toString(),
+				jclResultLockToken
+			);
+		pr.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_LOCK_KEY.getBytes());
+		
+		kafkaProducer.send(
+			pr
+		);
+		
+		try {
+
+			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
+				while ((jclResult = localResourceGlobalVar.read(key + ":" + Constants.Environment.LOCK_PREFIX + ":" + lockToken)) == null);
+			}
+			
+			while(!canAcquireGlobalVar(key, lockToken));
+
+			pr = new ProducerRecord<String, JCL_result>(
+					this.userIPAddress,
+					key.toString(),
+					jclResultLockToken
+				);
+			pr.headers().add("jcl-action", Constants.Environment.GLOBAL_VAR_ACQUIRE.getBytes());
+			
+			kafkaProducer.send(
+				pr
+			);
 
 			if((localResourceGlobalVar.isFinished()==false) || (localResourceGlobalVar.getNumOfRegisters()!=0)){
 				while ((jclResult = localResourceGlobalVar.read(key.toString())) == null);
@@ -2461,6 +2689,14 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 		}
 		
 		protected JCL_result getResultBlocking(Long ID) {
+			if(topicGranularity == Constants.Environment.HIGH_GRANULARITY_CONFIG_VALUE) {
+				return this.getResultBlockingHighGranularity(ID);
+			} else {
+				return this.getResultBlockingLowGranularity(ID);
+			}
+		}
+		
+		private JCL_result getResultBlockingHighGranularity(Long ID) {
 			JCL_result result, resultF = new JCL_resultImpl();
 			Object[] resultConfig;
 			Object hostAddress, hostTaskId;
@@ -2489,6 +2725,49 @@ public class JCL_FacadeImpl extends implementations.sm_kernel.JCL_FacadeImpl.Hol
 					resultF.setErrorResult(e);
 				}
 
+				return resultF;
+			} catch (Exception e) {
+				System.err
+				.println("problem in JCL facade getResultBlocking(String ID)");
+				e.printStackTrace();
+
+				JCL_result jclr = new JCL_resultImpl();
+				jclr.setErrorResult(e);
+
+				return jclr;
+			}
+		}
+		
+		private JCL_result getResultBlockingLowGranularity(Long ID) {
+			JCL_result result, resultF = new JCL_resultImpl();
+			Object[] resultConfig;
+			Object hostAddress, hostTaskId;
+
+			try {
+				result = super.getResultBlocking(ID);
+				resultConfig = (Object[])result.getCorrectResult();
+				hostTaskId = resultConfig[0];
+				hostAddress = resultConfig[1].toString();
+				String topicName = hostAddress.toString();
+				String executeKeyOnLocalResourceExecute = Constants.Environment.EXECUTE_KEY + hostTaskId;
+//				System.out.println(Thread.currentThread().getId() + " | " + topicName);
+				try {
+					if((localResourceExecute.isFinished()==false) || (localResourceExecute.getNumOfRegisters()!=0)){
+						while ((resultF = localResourceExecute.read(executeKeyOnLocalResourceExecute)) == null) {
+							if(!subscribedTopics.contains(topicName)) {
+								subscribedTopics.add(topicName);
+								kct.wakeup();
+							}
+						}
+					}
+				} catch (Exception e){
+					System.err
+						.println("problem in JCL_result getResultBlocking(" + ID + ")");
+					e.printStackTrace();
+
+					resultF.setErrorResult(e);
+				}
+//				System.out.println(Thread.currentThread().getId() + " | " + topicName + " | "  + resultF.getCorrectResult());
 				return resultF;
 			} catch (Exception e) {
 				System.err

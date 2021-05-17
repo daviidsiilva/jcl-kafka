@@ -90,6 +90,10 @@ public final class Constants {
 			return "../jcl_conf/kafkamapconfig.properties";
 		}
 	
+		public static final String GRANULARITY_CONFIG_KEY = "granularity";
+		public static final String HIGH_GRANULARITY_CONFIG_VALUE = "high";
+		public static final String LOW_GRANULARITY_CONFIG_VALUE = "low";
+		
 		public static final String GLOBAL_VAR_KEY = "GVK";
 		public static final String GLOBAL_VAR_LOCK_KEY = "GVLK";
 		public static final String GLOBAL_VAR_UNLOCK_KEY = "GVUK";
